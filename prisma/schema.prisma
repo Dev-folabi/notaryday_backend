@@ -173,6 +173,11 @@ model UserSettings {
   booking_page_active_hours Json?                         // { mon: { start: "09:00", end: "18:00" }, ... }
   booking_page_services    Json?                         // Array of { name, duration_mins, scanback_mins, base_fee, description } Pro only
 
+  // Invoicing
+  payment_info          Json?     // { zelle, venmo, paypal, bank_name, other }
+  invoice_notes         String?   @db.Text
+  invoice_due_days      Int       @default(0)
+
   // Notifications
   reminders_enabled        Boolean   @default(true)
   reminder_lead_mins       Int       @default(60)         // How far in advance to send reminder
@@ -398,9 +403,8 @@ model Invoice {
   travel_fee            Decimal   @default(0.00) @db.Decimal(8, 2)
   total                 Decimal   @db.Decimal(8, 2)
 
-  // Stripe
-  stripe_payment_link   String?             // One-time payment link URL
-  stripe_payment_intent_id String?
+  payment_method_used   String?   // e.g. "Zelle", "Venmo", "Check" — filled on mark-paid
+  pdf_url               String?   // Cloudflare R2 URL of generated PDF
 
   // Status
   sent_at               DateTime? @db.Timestamptz
@@ -498,23 +502,19 @@ model CalendarConnection {
 }
 
 
-// BILLING (Stripe subscription lifecycle)
+// BILLING (Lemon Squeezy subscription lifecycle)
 
+model LemonSqueezyEvent {
+  id           String    @id  // Lemon Squeezy event ID — prevents duplicate processing
+  event_name   String        // "subscription_created", "subscription_expired", etc.
+  payload      Json          // Full webhook payload
+  processed    Boolean   @default(false)
+  processed_at DateTime? @db.Timestamptz
+  error        String?
+  created_at   DateTime  @default(now()) @db.Timestamptz
 
-model StripeEvent {
-  id                    String    @id
-  // id = Stripe event ID (e.g. "evt_1234") — prevents duplicate processing
-
-  type                  String                            // "customer.subscription.updated", etc.
-  payload               Json                              // Full Stripe event object
-  processed             Boolean   @default(false)
-  processed_at          DateTime? @db.Timestamptz
-  error                 String?
-
-  created_at            DateTime  @default(now()) @db.Timestamptz
-
-  @@index([type, processed])
-  @@map("stripe_events")
+  @@index([event_name, processed])
+  @@map("lemonsqueezy_events")
 }
 
 

@@ -16,7 +16,7 @@ npm install @nestjs/passport passport passport-local express-session
 npm install @prisma/client prisma
 npm install ioredis bullmq
 npm install bcrypt class-validator class-transformer zod
-npm install axios resend stripe
+npm install axios resend @lemonsqueezy/lemonsqueezy-js
 npm install @aws-sdk/client-s3  # Cloudflare R2 is S3-compatible
 npm install ical-generator      # .ics feed generation
 npm install pdfkit               # Tax report PDF generation
@@ -71,11 +71,11 @@ src/
 │   ├── booking/                    ← Public booking page, availability engine
 │   ├── email-import/               ← Resend inbound webhook → BullMQ → OpenRouter
 │   ├── screenshot-import/          ← R2 upload → BullMQ → OpenRouter vision
-│   ├── invoicing/                  ← Invoice generation, Stripe payment links
+│   ├── invoicing/                  ← Invoice generation, pdfkit + Resend
 │   ├── reports/                    ← Earnings, mileage, notarial journal, tax export
 │   ├── calendar/                   ← Google OAuth, .ics feed
 │   ├── notifications/              ← Resend transactional + @nestjs/schedule crons
-│   └── billing/                    ← Stripe subscription lifecycle, webhooks
+│   └── billing/                    ← Lemon Squeezy subscription lifecycle, webhooks
 │
 ├── queues/
 │   ├── queue.constants.ts          ← Queue name constants (NEVER use raw strings)
@@ -164,7 +164,7 @@ async function bootstrap() {
     }),
   );
 
-  // CSRF — exclude inbound email webhook and Stripe webhook (they use HMAC auth)
+  // CSRF — exclude inbound email webhook and Lemon Squeezy webhook (they use HMAC auth)
   app.use((req, res, next) => {
     const excluded = ['/api/v1/email-import/inbound', '/api/v1/billing/webhook'];
     if (excluded.includes(req.path)) return next();
@@ -174,7 +174,7 @@ async function bootstrap() {
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,           // Strip unknown fields
+      whitelist: true,           // Lemon Squeezy unknown fields
       forbidNonWhitelisted: true,
       transform: true,           // Auto-transform to DTO types
     }),
@@ -444,10 +444,16 @@ DELETE /calendar/disconnect         Auth   Pro
 GET    /calendar/:token/feed.ics    Public (ICS feed — token is per-user secret)
 
 BILLING
-POST   /billing/subscribe           Auth
+POST   /billing/subscribe           Auth   (returns LS checkout URL → frontend redirects)
 POST   /billing/cancel              Auth
-GET    /billing/portal              Auth   (Stripe customer portal URL)
-POST   /billing/webhook             Public (Stripe webhook — HMAC verified, no CSRF)
+GET    /billing/portal              Auth   (returns LS customer portal URL)
+POST   /billing/webhook             Public (Lemon Squeezy webhook — HMAC verified, no CSRF)
+
+INVOICING
+POST   /jobs/:id/invoice            Auth   Pro — generate PDF + send via Resend
+GET    /invoices/:id                Auth   Pro — view invoice details
+PATCH  /invoices/:id/mark-paid      Auth   Pro — manually mark invoice as paid
+GET    /invoices                    Auth   Pro — list all invoices (?status=paid|unpaid)
 
 NOTIFICATIONS
 GET    /notifications               Auth
@@ -499,7 +505,7 @@ All API responses follow this shape (enforced by `TransformInterceptor`):
 
 - Unit test every service method that contains business logic (CITT engine, profitability formula, gap finder, availability engine).
 - Use Jest. File naming: `{name}.service.spec.ts`.
-- Mock all external calls (ORS, Nominatim, OpenRouter, Resend, Stripe) — never hit real APIs in tests.
+- Mock all external calls (ORS, Nominatim, OpenRouter, Resend, Lemon Squeezy) — never hit real APIs in tests.
 - Test CITT scanback conflict detection with explicit time scenarios.
 - Test availability engine with edge cases: scanback after last job, no confirmed jobs (use home base), gap too small.
 - Coverage target: 80%+ on `modules/citt`, `modules/routing`, `modules/planner`, `modules/booking`.
@@ -520,3 +526,38 @@ These are the default durations. Users can override per-type in Settings, and pe
 | apostille | 20 min | 0 min | 20 min |
 
 Scanback is 0 for general, field_inspection, and apostille — they require no document scanning.
+
+## 14. Invoice Generation (No Payment Gateway)
+
+### How It Works
+1. Notary marks job as complete (status → complete)
+2. Auto-trigger: QUEUE_INVOICE job enqueued
+3. Worker generates PDF invoice via pdfkit
+4. PDF emailed to recipient via Resend
+5. Invoice record created in DB (is_paid: false)
+6. Notary taps "Mark as paid" when payment arrives → is_paid: true, paid_at: now()
+
+### Invoice PDF Contents
+- Notary's full name, phone, email, NNA credentials
+- Invoice number (INV-YYYY-NNNN — sequential per user)
+- Job date, address, signing type, duration
+- Itemised fees: base fee, travel fee (if applicable)
+- Total due
+- Notary's payment details block (from UserSettings.payment_info)
+- "Payment due upon receipt" note
+
+### UserSettings additions needed for invoicing
+payment_info: Json   // { zelle?: string, venmo?: string, paypal?: string, 
+                     //   bank_name?: string, account_last4?: string, 
+                     //   routing_last4?: string, other?: string }
+invoice_notes: String?  // Default note printed on every invoice e.g. 
+                        // "Thank you for your business"
+invoice_due_days: Int   @default(0)  // 0 = due on receipt, 30 = net 30
+
+### Lemon Squeezy Webhook Events to Handle
+- order_created       → plan activated (one-time — not subscription)
+- subscription_created → plan set to PRO or PRO_ANNUAL
+- subscription_updated → handle plan changes, renewal
+- subscription_cancelled → schedule downgrade at period end
+- subscription_expired → set plan back to FREE
+- subscription_payment_failed → email notary, retain access until expiry
