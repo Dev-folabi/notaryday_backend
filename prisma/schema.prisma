@@ -1,26 +1,15 @@
-// Notary Day — Prisma Schema
-// Database: PostgreSQL
-// ORM: Prisma
-// Last updated: April 2026
-//
-// READ BEFORE EDITING:
-// - All table names are PascalCase (Prisma convention)
-// - All column names are snake_case
-// - Enums are SCREAMING_SNAKE_CASE
-// - IDs are UUIDs (cuid() for Prisma-managed, uuid() for external references)
-// - All timestamps are @db.Timestamptz (timezone-aware — notaries are across US timezones)
-// - Never add a column without understanding which module owns it
-// - Run `npx prisma generate` after every change
-// - Run `npx prisma migrate dev --name <description>` to create migration
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+// Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ENUMS
