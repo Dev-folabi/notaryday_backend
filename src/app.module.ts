@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bull';
-import { validationSchema } from './config/validation.schema';
+import { AppConfigModule } from './config/config.module';
 import { RedisModule } from './config/redis.module';
 import { PrismaModule } from './config/prisma.module';
 import { QueueModule } from './queues/queue.module';
@@ -16,20 +16,15 @@ import { AppService } from './app.service';
 @Module({
   imports: [
     // Config
-    ConfigModule.forRoot({
-      load: [() => ({})],
-      validationSchema,
-      isGlobal: true,
-      cache: true,
-    }),
+    AppConfigModule,
 
     // Rate limiting
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => [
         {
-          ttl: 60000,
-          limit: 100,
+          ttl: config.get<number>('THROTTLER_TTL') ?? 60000,
+          limit: config.get<number>('THROTTLER_LIMIT') ?? 100,
         },
       ],
     }),

@@ -12,7 +12,13 @@ import { UsersService } from './users.service';
 import { UserSettingsService } from './user-settings.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { IsString, IsOptional, IsEmail, IsBoolean, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEmail,
+  IsBoolean,
+  IsNumber,
+} from 'class-validator';
 
 class UpdateProfileDto {
   @IsOptional()

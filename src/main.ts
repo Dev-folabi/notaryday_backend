@@ -23,7 +23,7 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api/v1');
 
-  // CORS — tighten in production
+  // CORS
   app.enableCors({
     origin: configService.get<string>('APP_URL') ?? 'http://localhost:4000',
     credentials: true,
@@ -48,7 +48,7 @@ async function bootstrap() {
   } catch (err: any) {
     logger.warn(
       'Redis connection failed, continuing without session store:',
-      err.message,
+      err instanceof Error ? err.message : err,
     );
   }
 
@@ -76,13 +76,23 @@ async function bootstrap() {
       '/api/v1/billing/webhook',
       '/api/v1/health',
     ];
-    if (excluded.some((path) => req.path.startsWith(path))) {
+    if (
+      excluded.some((path) => (req as { path: string }).path.startsWith(path))
+    ) {
       return next();
     }
-    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    if (
+      ['GET', 'HEAD', 'OPTIONS'].includes((req as { method: string }).method)
+    ) {
       return next();
     }
-    return csurf({ cookie: false })(req, res, next);
+    return (
+      csurf({ cookie: false }) as (
+        req: any,
+        res: any,
+        next: (err?: any) => void,
+      ) => void
+    )(req, res, next);
   });
 
   // Global validation pipe
@@ -115,4 +125,7 @@ async function bootstrap() {
   );
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

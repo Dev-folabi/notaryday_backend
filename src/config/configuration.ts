@@ -28,7 +28,9 @@ export const orsConfig = registerAs('ors', () => ({
 export const openRouterConfig = registerAs('openrouter', () => ({
   apiKey: process.env.OPENROUTER_API_KEY!,
   baseUrl: 'https://openrouter.ai/api/v1',
-  defaultModel: process.env.OPENROUTER_DEFAULT_MODEL ?? 'mistralai/mistral-7b-instruct:free',
+  defaultModel:
+    process.env.OPENROUTER_DEFAULT_MODEL ??
+    'mistralai/mistral-7b-instruct:free',
 }));
 
 export const resendConfig = registerAs('resend', () => ({

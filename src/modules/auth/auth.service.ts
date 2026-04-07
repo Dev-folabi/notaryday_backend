@@ -14,7 +14,12 @@ export class AuthService {
     private readonly userSettingsService: UserSettingsService,
   ) {}
 
-  async register(data: { email: string; password: string; username: string; fullName?: string }) {
+  async register(data: {
+    email: string;
+    password: string;
+    username: string;
+    fullName?: string;
+  }) {
     // Check email not taken
     const existingEmail = await this.usersService.findByEmail(data.email);
     if (existingEmail) {
@@ -22,9 +27,13 @@ export class AuthService {
     }
 
     // Check username not taken
-    const existingUsername = await this.usersService.findByUsername(data.username);
+    const existingUsername = await this.usersService.findByUsername(
+      data.username,
+    );
     if (existingUsername) {
-      throw new ConflictException('That username is taken — try a different one');
+      throw new ConflictException(
+        'That username is taken — try a different one',
+      );
     }
 
     // Create user
@@ -74,7 +83,10 @@ export class AuthService {
     return { sent: true };
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean }> {
+  async resetPassword(
+    token: string,
+    newPassword: string,
+  ): Promise<{ success: boolean }> {
     const result = await this.usersService.validatePasswordResetToken(token);
     if (!result) {
       throw new BadRequestException('Invalid or expired reset token');

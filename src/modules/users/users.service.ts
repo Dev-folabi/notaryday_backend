@@ -121,10 +121,7 @@ export class UsersService {
     });
   }
 
-  async updateOnboardingStep(
-    userId: string,
-    step: number,
-  ): Promise<User> {
+  async updateOnboardingStep(userId: string, step: number): Promise<User> {
     return this.prisma.user.update({
       where: { id: userId },
       data: {

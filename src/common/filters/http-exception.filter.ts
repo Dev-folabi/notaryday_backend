@@ -38,8 +38,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         code = this.getCodeFromStatus(status);
       } else if (typeof exceptionResponse === 'object') {
         const resp = exceptionResponse as Record<string, any>;
-        message = resp.message ?? exception.message;
-        code = resp.code ?? this.getCodeFromStatus(status);
+        message = (resp.message as string) ?? exception.message;
+        code = (resp.code as string) ?? this.getCodeFromStatus(status);
       } else {
         message = exception.message;
         code = this.getCodeFromStatus(status);

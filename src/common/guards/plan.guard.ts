@@ -15,7 +15,7 @@ export class PlanGuard implements CanActivate {
     private readonly usersService: UsersService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiresPro = this.reflector.getAllAndOverride<boolean>(
       REQUIRES_PRO_KEY,
       [context.getHandler(), context.getClass()],
@@ -25,14 +25,16 @@ export class PlanGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context
+      .switchToHttp()
+      .getRequest<{ session?: { userId?: string } }>();
     const userId = request.session?.userId;
 
     if (!userId) {
       return true; // AuthGuard will handle this
     }
 
-    const user = request.user;
+    const user = await this.usersService.findById(userId);
     if (!user) {
       return true;
     }

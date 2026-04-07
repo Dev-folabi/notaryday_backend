@@ -15,7 +15,9 @@ export const validationSchema = Joi.object({
 
   // OpenRouter
   OPENROUTER_API_KEY: Joi.string().required(),
-  OPENROUTER_DEFAULT_MODEL: Joi.string().default('mistralai/mistral-7b-instruct:free'),
+  OPENROUTER_DEFAULT_MODEL: Joi.string().default(
+    'mistralai/mistral-7b-instruct:free',
+  ),
 
   // Resend
   RESEND_API_KEY: Joi.string().required(),
@@ -40,6 +42,12 @@ export const validationSchema = Joi.object({
 
   // App
   APP_URL: Joi.string().default('http://localhost:4000'),
-  NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'staging')
+    .default('development'),
   PORT: Joi.number().default(4000),
+
+  // Rate limiting
+  THROTTLER_TTL: Joi.number().default(60000),
+  THROTTLER_LIMIT: Joi.number().default(100),
 });
