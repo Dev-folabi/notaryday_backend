@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
-import { NavApp } from '../../../generated/prisma';
+import { NavApp, SigningType } from '../../../generated/prisma';
 
 @Injectable()
 export class UserSettingsService {
@@ -109,12 +109,12 @@ export class UserSettingsService {
       where: {
         user_id_signing_type: {
           user_id: userId,
-          signing_type: signingType as any,
+          signing_type: signingType as SigningType,
         },
       },
       create: {
         user_id: userId,
-        signing_type: signingType as any,
+        signing_type: signingType as SigningType,
         signing_duration_mins: signingDurationMins,
         scanback_duration_mins: scanbackDurationMins,
       },

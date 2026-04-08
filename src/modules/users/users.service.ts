@@ -1,4 +1,5 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { User, PlanTier } from '../../../generated/prisma';
@@ -7,7 +8,10 @@ const BCRYPT_SALT_ROUNDS = 12;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({
@@ -53,8 +57,8 @@ export class UsersService {
         full_name: data.fullName ?? null,
         settings: {
           create: {
-            // IRS rate defaults per spec: $0.72/mile (2024 rate)
-            irs_rate_per_mile: 0.72,
+            irs_rate_per_mile:
+              this.configService.get<number>('IRS_RATE_PER_MILE') ?? 0.725,
           },
         },
       },

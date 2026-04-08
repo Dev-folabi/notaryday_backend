@@ -50,4 +50,7 @@ export const validationSchema = Joi.object({
   // Rate limiting
   THROTTLER_TTL: Joi.number().default(60000),
   THROTTLER_LIMIT: Joi.number().default(100),
+
+  // Application Defaults
+  IRS_RATE_PER_MILE: Joi.number().default(0.725),
 });
