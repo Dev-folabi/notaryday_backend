@@ -24,14 +24,14 @@ enum SigningType {
 }
 
 enum JobStatus {
-  PENDING            // Created but not yet confirmed — notary hasn't committed
-  PENDING_REVIEW     // Came in from booking page — awaiting notary approval
-  CONFIRMED          // Notary has accepted — anchored in schedule
-  IN_PROGRESS        // Signing has started (notary tapped "Start signing")
-  SCANNING           // Signing complete, scanback in progress
-  COMPLETE           // Scanback complete / job fully done
-  CANCELLED          // Notary cancelled
-  DECLINED           // Notary declined a booking_page request
+  PENDING // Created but not yet confirmed — notary hasn't committed
+  PENDING_REVIEW // Came in from booking page — awaiting notary approval
+  CONFIRMED // Notary has accepted — anchored in schedule
+  IN_PROGRESS // Signing has started (notary tapped "Start signing")
+  SCANNING // Signing complete, scanback in progress
+  COMPLETE // Scanback complete / job fully done
+  CANCELLED // Notary cancelled
+  DECLINED // Notary declined a booking_page request
 }
 
 enum JobSource {
@@ -39,14 +39,14 @@ enum JobSource {
   EMAIL_IMPORT
   SCREENSHOT
   BOOKING_PAGE
-  CSV              // V1.5 — not in MVP, keep enum for forward compatibility
+  CSV // V1.5 — not in MVP, keep enum for forward compatibility
 }
 
 enum PlanTier {
   FREE
   PRO
   PRO_ANNUAL
-  TEAM             // V2 — not in MVP
+  TEAM // V2 — not in MVP
 }
 
 enum NavApp {
@@ -93,35 +93,41 @@ enum ImportStatus {
   DUPLICATE
 }
 
+enum ScanbackStatus {
+  PENDING
+  COMPLETE
+  FAILED
+}
+
 // USER & SETTINGS
 
 model User {
-  id                    String    @id @default(cuid())
-  email                 String    @unique
-  password_hash         String
-  username              String    @unique  // URL slug: notaryday.app/book/[username]
-  full_name             String?
-  phone                 String?
+  id            String  @id @default(cuid())
+  email         String  @unique
+  password_hash String
+  username      String  @unique // URL slug: notaryday.app/book/[username]
+  full_name     String?
+  phone         String?
 
   // Plan & billing
-  plan                  PlanTier  @default(FREE)
-  stripe_customer_id    String?   @unique
-  stripe_subscription_id String?  @unique
-  plan_expires_at       DateTime? @db.Timestamptz // Used for PRO_ANNUAL only — monthly managed entirely by Stripe subscription status
+  plan                          PlanTier  @default(FREE)
+  lemon_squeezy_customer_id     String?   @unique
+  lemon_squeezy_subscription_id String?   @unique
+  plan_expires_at               DateTime? @db.Timestamptz // Used for PRO_ANNUAL only — monthly managed entirely by lemon_squeezy subscription status
 
   // Onboarding state
-  onboarding_completed  Boolean   @default(false)
-  onboarding_step       Int       @default(1)  // 1-4, tracks current step
+  onboarding_completed Boolean @default(false)
+  onboarding_step      Int     @default(1) // 1-4, tracks current step
 
   // Notary profile
-  nna_certified         Boolean   @default(false)
-  bio                   String?   @db.Text
-  credentials           String[]  @default([]) // ["NNA Certified", "Loan Signing Agent"]
+  nna_certified Boolean  @default(false)
+  bio           String?  @db.Text
+  credentials   String[] @default([]) // ["NNA Certified", "Loan Signing Agent"]
 
   // Timestamps
-  created_at            DateTime  @default(now()) @db.Timestamptz
-  updated_at            DateTime  @updatedAt @db.Timestamptz
-  last_seen_at          DateTime? @db.Timestamptz
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  updated_at   DateTime  @updatedAt @db.Timestamptz
+  last_seen_at DateTime? @db.Timestamptz
 
   // Relations
   settings              UserSettings?
@@ -140,363 +146,392 @@ model User {
 }
 
 model UserSettings {
-  id                       String    @id @default(cuid())
-  user_id                  String    @unique
-  user                     User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String @unique
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   // Home base (origin for routing when no prior job exists)
-  home_base_address        String?
-  home_base_lat            Decimal?  @db.Decimal(10, 7)
-  home_base_lng            Decimal?  @db.Decimal(10, 7)
+  home_base_address String?
+  home_base_lat     Decimal? @db.Decimal(10, 7)
+  home_base_lng     Decimal? @db.Decimal(10, 7)
 
   // Mileage & profitability
-  irs_rate_per_mile        Decimal   @default(0.72) @db.Decimal(5, 4)
-  vehicle_type             String?   // "car", "truck", "suv" — for future rate lookup
-  min_acceptable_net       Decimal   @default(20.00) @db.Decimal(8, 2) // Below this = DECLINE
+  irs_rate_per_mile  Decimal @default(0.72) @db.Decimal(5, 4)
+  vehicle_type       String? // "car", "truck", "suv" — for future rate lookup
+  min_acceptable_net Decimal @default(20.00) @db.Decimal(8, 2) // Below this = DECLINE
 
   // Booking page settings
-  booking_page_enabled     Boolean   @default(false)
-  booking_page_bio         String?   @db.Text
-  service_area_miles       Int       @default(25)         // Max radius for direct bookings
-  booking_buffer_mins      Int       @default(15)         // Minimum gap before accepting booking
-  booking_page_active_hours Json?                         // { mon: { start: "09:00", end: "18:00" }, ... }
-  booking_page_services    Json?                         // Array of { name, duration_mins, scanback_mins, base_fee, description } Pro only
+  booking_page_enabled      Boolean @default(false)
+  booking_page_bio          String? @db.Text
+  service_area_miles        Int     @default(25) // Max radius for direct bookings
+  booking_buffer_mins       Int     @default(15) // Minimum gap before accepting booking
+  booking_page_active_hours Json? // { mon: { start: "09:00", end: "18:00" }, ... }
+  booking_page_services     Json? // Array of { name, duration_mins, scanback_mins, base_fee, description } Pro only
 
   // Invoicing
-  payment_info          Json?     // { zelle, venmo, paypal, bank_name, other }
-  invoice_notes         String?   @db.Text
-  invoice_due_days      Int       @default(0)
+  payment_info     Json? // { zelle, venmo, paypal, bank_name, other }
+  invoice_notes    String? @db.Text
+  invoice_due_days Int     @default(0)
 
   // Notifications
-  reminders_enabled        Boolean   @default(true)
-  reminder_lead_mins       Int       @default(60)         // How far in advance to send reminder
-  client_eta_enabled       Boolean   @default(true)       // Auto-send ETA when signing done
+  reminders_enabled  Boolean @default(true)
+  reminder_lead_mins Int     @default(60) // How far in advance to send reminder
+  client_eta_enabled Boolean @default(true) // Auto-send ETA when signing done
 
   // Navigation
-  preferred_nav_app        NavApp    @default(GOOGLE_MAPS)
+  preferred_nav_app NavApp @default(GOOGLE_MAPS)
 
   // Calendar sync
-  ics_feed_token           String    @unique @default(cuid()) // Secret token for .ics URL
+  ics_feed_token String @unique @default(cuid()) // Secret token for .ics URL
 
-  created_at               DateTime  @default(now()) @db.Timestamptz
-  updated_at               DateTime  @updatedAt @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
 
   @@map("user_settings")
 }
 
 // Per-user override of signing type durations (default values seeded at registration)
 model SigningTypeDefault {
-  id                    String      @id @default(cuid())
-  user_id               String
-  user                  User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  signing_type          SigningType
-  signing_duration_mins Int
-  scanback_duration_mins Int        // 0 for types that don't require scanback
+  signing_type           SigningType
+  signing_duration_mins  Int
+  scanback_duration_mins Int // 0 for types that don't require scanback
 
-  created_at            DateTime    @default(now()) @db.Timestamptz
-  updated_at            DateTime    @updatedAt @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
 
   @@unique([user_id, signing_type])
   @@map("signing_type_defaults")
 }
 
+// DAY PLAN (for day plan feature)
+
+model DayPlan {
+  id      String @id @default(cuid())
+  user_id String
+
+  jobs Job[]
+
+  date             DateTime @db.Date
+  total_drive_time Int      @default(0) // minutes
+  total_earnings   Decimal  @default(0) @db.Decimal(10, 2)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  @@unique([user_id, date])
+  @@map("day_plans")
+}
 
 // JOBS (core entity)
 
-
 model Job {
-  id                    String      @id @default(cuid())
-  user_id               String
-  user                  User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   // Location
-  address               String
-  lat                   Decimal?    @db.Decimal(10, 7)    // Geocoded via Nominatim, cached
-  lng                   Decimal?    @db.Decimal(10, 7)
+  address String
+  lat     Decimal? @db.Decimal(10, 7) // Geocoded via Nominatim, cached
+  lng     Decimal? @db.Decimal(10, 7)
 
   // Scheduling — all times stored in UTC, displayed in user's local timezone
-  appointment_time      DateTime    @db.Timestamptz       // Hard constraint — anchored
-  signing_duration_mins Int                               // From type defaults or per-job override
-  scanback_duration_mins Int        @default(0)           // 0 for non-scan types
+  appointment_time      DateTime @db.Timestamptz // Hard constraint — anchored
+  signing_duration_mins Int // From type defaults or per-job override
 
   // Derived time fields (computed + stored for performance)
-  signing_ends_at       DateTime?   @db.Timestamptz       // appointment_time + signing_duration_mins
-  scanback_ends_at      DateTime?   @db.Timestamptz       // signing_ends_at + scanback_duration_mins
+  signing_ends_at DateTime? @db.Timestamptz // appointment_time + signing_duration_mins
 
   // Signing details
-  signing_type          SigningType @default(GENERAL)
-  status                JobStatus   @default(PENDING)
-  source                JobSource   @default(MANUAL)
+  signing_type SigningType @default(GENERAL)
+  status       JobStatus   @default(PENDING)
+  source       JobSource   @default(MANUAL)
 
   // Financial
-  fee                   Decimal     @db.Decimal(8, 2)     // Gross offered fee
-  platform_fee          Decimal     @default(0.00) @db.Decimal(8, 2) // Platform deduction
-  mileage_miles         Decimal?    @db.Decimal(8, 2)     // Calculated from route
-  mileage_cost          Decimal?    @db.Decimal(8, 2)     // mileage_miles * 2 * irs_rate
-  net_earnings          Decimal?    @db.Decimal(8, 2)     // fee - mileage_cost - platform_fee
-  effective_hourly      Decimal?    @db.Decimal(8, 2)     // net_earnings / total_time_hrs
+  fee               Decimal  @db.Decimal(8, 2) // Gross offered fee
+  platform_fee      Decimal  @default(0.00) @db.Decimal(8, 2) // Platform deduction
+  mileage_miles     Decimal? @db.Decimal(8, 2) // Calculated from route
+  mileage_cost      Decimal? @db.Decimal(8, 2) // mileage_miles * 2 * irs_rate
+  net_earnings      Decimal? @db.Decimal(8, 2) // fee - mileage_cost - platform_fee
+  effective_hourly  Decimal? @db.Decimal(8, 2) // net_earnings / total_time_hrs
+  irs_rate_snapshot Decimal  @db.Decimal(5, 4) // Snapshot of IRS rate at time of job creation
 
   // Parties
-  client_name           String?
-  client_phone          String?
-  client_email          String?
-  platform_name         String?                           // "Snapdocs", "SigningOrder", "Direct", etc.
-  signer_count          Int         @default(1)
+  client_name   String?
+  client_phone  String?
+  client_email  String?
+  platform_name String? // "Snapdocs", "SigningOrder", "Direct", etc.
+  signer_count  Int     @default(1)
+
+  day_plan_id String?
+  day_plan    DayPlan? @relation(fields: [day_plan_id], references: [id])
 
   // Source linkage
-  booking_id            String?     @unique               // FK if came from booking page
-  booking               Booking?    @relation(fields: [booking_id], references: [id])
-  email_import_id       String?                           // FK to EmailImport if parsed from email
-  email_import          EmailImport? @relation(fields: [email_import_id], references: [id])
+  booking_id      String?      @unique // FK if came from booking page
+  booking         Booking?     @relation(fields: [booking_id], references: [id])
+  email_import_id String? // FK to EmailImport if parsed from email
+  email_import    EmailImport? @relation(fields: [email_import_id], references: [id])
 
   // Status timestamps (for analytics + audit)
-  confirmed_at          DateTime?   @db.Timestamptz
-  started_at            DateTime?   @db.Timestamptz
-  scanning_started_at   DateTime?   @db.Timestamptz
-  completed_at          DateTime?   @db.Timestamptz
-  cancelled_at          DateTime?   @db.Timestamptz
+  confirmed_at        DateTime? @db.Timestamptz
+  started_at          DateTime? @db.Timestamptz
+  scanning_started_at DateTime? @db.Timestamptz
+  completed_at        DateTime? @db.Timestamptz
+  cancelled_at        DateTime? @db.Timestamptz
 
   // Notes
-  notes                 String?     @db.Text
+  notes String? @db.Text
 
   // Sequence in optimised route (updated by route engine)
-  route_sequence        Int?        // 1-based position in day's optimised route
+  route_sequence Int? // 1-based position in day's optimised route
 
   // Drive leg data (from origin to this job — stored after optimisation)
-  drive_from_prev_mins  Int?        // Drive time from previous job (or home base)
-  drive_from_prev_miles Decimal?    @db.Decimal(8, 2)
+  drive_from_prev_mins  Int? // Drive time from previous job (or home base)
+  drive_from_prev_miles Decimal? @db.Decimal(8, 2)
 
-  created_at            DateTime    @default(now()) @db.Timestamptz
-  updated_at            DateTime    @updatedAt @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
 
   // Relations
-  invoice               Invoice?
-  notifications         Notification[]
+  invoice       Invoice?
+  notifications Notification[]
+  scanback      Scanback[]
 
+  @@unique([day_plan_id, route_sequence])
   @@index([user_id, appointment_time])
   @@index([user_id, status])
   @@index([user_id, appointment_time, status]) // compound for today view query
+  @@index([day_plan_id])
   @@map("jobs")
 }
 
+// SCANBACKS (for scanback jobs)
+
+model Scanback {
+  id         String         @id @default(cuid())
+  job_id     String
+  job        Job            @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  start_time DateTime       @db.Timestamptz
+  end_time   DateTime       @db.Timestamptz
+  location   String
+  status     ScanbackStatus
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  @@map("scanbacks")
+}
 
 // BOOKING PAGE (Pro feature)
 
-
 model Booking {
-  id                    String        @id @default(cuid())
-  notary_id             String
-  notary                User          @relation(fields: [notary_id], references: [id], onDelete: Cascade)
+  id        String @id @default(cuid())
+  notary_id String
+  notary    User   @relation(fields: [notary_id], references: [id], onDelete: Cascade)
 
   // Client info (no account required)
-  client_name           String
-  client_email          String
-  client_phone          String?
+  client_name  String
+  client_email String
+  client_phone String?
 
   // Request details
-  address               String
-  lat                   Decimal?      @db.Decimal(10, 7)
-  lng                   Decimal?      @db.Decimal(10, 7)
-  service_type          SigningType
-  requested_time        DateTime      @db.Timestamptz
-  document_type         String?       // Free text: "Deed of Trust", "Will", etc.
-  notes                 String?       @db.Text
+  address        String
+  lat            Decimal?    @db.Decimal(10, 7)
+  lng            Decimal?    @db.Decimal(10, 7)
+  service_type   SigningType
+  requested_time DateTime    @db.Timestamptz
+  document_type  String? // Free text: "Deed of Trust", "Will", etc.
+  notes          String?     @db.Text
 
   // Fees shown to client
-  base_fee              Decimal       @db.Decimal(8, 2)
-  travel_fee_estimate   Decimal?      @db.Decimal(8, 2)
+  base_fee            Decimal  @db.Decimal(8, 2)
+  travel_fee_estimate Decimal? @db.Decimal(8, 2)
 
   // Status
-  status                BookingStatus @default(PENDING_REVIEW)
-  declined_reason       String?
-  alternative_times     DateTime[]    @db.Timestamptz // Offered if declined
+  status            BookingStatus @default(PENDING_REVIEW)
+  declined_reason   String?
+  alternative_times DateTime[]    @db.Timestamptz // Offered if declined
 
   // The job created when approved
-  job                   Job?          // back-relation via job.booking_id
+  job Job? // back-relation via job.booking_id
 
   // Timestamps
-  submitted_at          DateTime      @default(now()) @db.Timestamptz
-  reviewed_at           DateTime?     @db.Timestamptz
-  confirmed_at          DateTime?     @db.Timestamptz
-  created_at            DateTime      @default(now()) @db.Timestamptz
-  updated_at            DateTime      @updatedAt @db.Timestamptz
+  submitted_at DateTime  @default(now()) @db.Timestamptz
+  reviewed_at  DateTime? @db.Timestamptz
+  confirmed_at DateTime? @db.Timestamptz
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  updated_at   DateTime  @updatedAt @db.Timestamptz
+  deleted_at   DateTime? @db.Timestamptz
 
   @@index([notary_id, status])
   @@index([notary_id, requested_time])
   @@map("bookings")
 }
 
-
 // EMAIL IMPORT (Pro feature)
 
-
 model EmailImport {
-  id                    String        @id @default(cuid())
-  user_id               String
-  user                  User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   // Raw email data from Resend inbound webhook
-  resend_message_id     String        @unique
-  from_address          String
-  subject               String?
-  raw_text              String        @db.Text
-  raw_html              String?       @db.Text
+  resend_message_id String  @unique
+  from_address      String
+  subject           String?
+  raw_text          String  @db.Text
+  raw_html          String? @db.Text
 
   // AI parse result (OpenRouter)
-  parsed_address        String?
-  parsed_appointment_time DateTime?   @db.Timestamptz
-  parsed_signing_type   SigningType?
-  parsed_fee            Decimal?      @db.Decimal(8, 2)
-  parsed_platform_fee   Decimal?      @db.Decimal(8, 2)
-  parsed_client_name    String?
-  parsed_platform_name  String?
-  parsed_notes          String?
+  parsed_address          String?
+  parsed_appointment_time DateTime?    @db.Timestamptz
+  parsed_signing_type     SigningType?
+  parsed_fee              Decimal?     @db.Decimal(8, 2)
+  parsed_platform_fee     Decimal?     @db.Decimal(8, 2)
+  parsed_client_name      String?
+  parsed_platform_name    String?
+  parsed_notes            String?
 
   // Processing state
-  status                ImportStatus  @default(QUEUED)
-  error_message         String?
-  ai_model_used         String?
-  ai_tokens_used        Int?
+  status         ImportStatus @default(QUEUED)
+  error_message  String?
+  ai_model_used  String?
+  ai_tokens_used Int?
 
   // The job created from this import (null until user confirms)
-  jobs                  Job[]
+  jobs Job[]
 
-  received_at           DateTime      @db.Timestamptz
-  processed_at          DateTime?     @db.Timestamptz
-  created_at            DateTime      @default(now()) @db.Timestamptz
+  received_at  DateTime  @db.Timestamptz
+  processed_at DateTime? @db.Timestamptz
+  created_at   DateTime  @default(now()) @db.Timestamptz
 
   @@index([user_id, status])
   @@index([user_id, received_at])
   @@map("email_imports")
 }
 
-
 // INVOICING
 
-
 model Invoice {
-  id                    String    @id @default(cuid())
-  user_id               String
-  user                  User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  job_id                String    @unique
-  job                   Job       @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  job_id  String @unique
+  job     Job    @relation(fields: [job_id], references: [id], onDelete: Cascade)
 
   // Invoice details
-  invoice_number        String    @unique   // e.g. "INV-2026-0042"
-  recipient_email       String              // Signing service or client email
-  recipient_name        String?
+  invoice_number  String  @unique // e.g. "INV-2026-0042"
+  recipient_email String // Signing service or client email
+  recipient_name  String?
 
   // Amounts
-  subtotal              Decimal   @db.Decimal(8, 2)
-  travel_fee            Decimal   @default(0.00) @db.Decimal(8, 2)
-  total                 Decimal   @db.Decimal(8, 2)
+  subtotal   Decimal @db.Decimal(8, 2)
+  travel_fee Decimal @default(0.00) @db.Decimal(8, 2)
+  total      Decimal @db.Decimal(8, 2)
 
-  payment_method_used   String?   // e.g. "Zelle", "Venmo", "Check" — filled on mark-paid
-  pdf_url               String?   // Cloudflare R2 URL of generated PDF
+  payment_method_used String? // e.g. "Zelle", "Venmo", "Check" — filled on mark-paid
+  pdf_url             String? // Cloudflare R2 URL of generated PDF
 
   // Status
-  sent_at               DateTime? @db.Timestamptz
-  paid_at               DateTime? @db.Timestamptz
-  is_paid               Boolean   @default(false)
+  sent_at DateTime? @db.Timestamptz
+  paid_at DateTime? @db.Timestamptz
+  is_paid Boolean   @default(false)
 
   // Resend
-  resend_email_id       String?             // For delivery tracking
+  resend_email_id String? // For delivery tracking
 
-  created_at            DateTime  @default(now()) @db.Timestamptz
-  updated_at            DateTime  @updatedAt @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
 
   @@index([user_id, created_at])
   @@map("invoices")
 }
 
-
 // EXPENSES
 
-
 model Expense {
-  id                    String          @id @default(cuid())
-  user_id               String
-  user                  User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  category              ExpenseCategory
-  amount                Decimal         @db.Decimal(8, 2)
-  description           String
-  expense_date          DateTime        @db.Date          // Date only, no time
-  receipt_url           String?                           // Cloudflare R2 URL
-  notes                 String?         @db.Text
+  category     ExpenseCategory
+  amount       Decimal         @db.Decimal(8, 2)
+  description  String
+  expense_date DateTime        @db.Date
+  receipt_url  String? // Cloudflare R2 URL
+  notes        String?         @db.Text
 
-  created_at            DateTime        @default(now()) @db.Timestamptz
-  updated_at            DateTime        @updatedAt @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
 
   @@index([user_id, expense_date])
   @@index([user_id, category])
   @@map("expenses")
 }
 
-
 // NOTARIAL JOURNAL
 
-
 model JournalEntry {
-  id                    String    @id @default(cuid())
-  user_id               String
-  user                  User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  // Linked job (optional — journal entry can be standalone)
-  job_id                String?
-  // Note: no direct relation to Job to avoid complexity — reference by ID only
+  job_id String?
 
-  entry_date            DateTime  @db.Date
-  act_type              String                            // "Acknowledgment", "Jurat", "Oath", etc.
-  signer_name           String
-  signer_id_type        String?                           // "Driver's License", "Passport"
-  signer_id_number      String?                           // Last 4 digits only for privacy
-  document_type         String?                           // "Deed", "Will", "Affidavit"
-  address               String?
-  fee_charged           Decimal?  @db.Decimal(8, 2)
-  notes                 String?   @db.Text
+  entry_date       DateTime @db.Date
+  act_type         String // "Acknowledgment", "Jurat", "Oath", etc.
+  signer_name      String
+  signer_id_type   String? // "Driver's License", "Passport"
+  signer_id_number String? // Last 4 digits only for privacy
+  document_type    String? // "Deed", "Will", "Affidavit"
+  address          String?
+  fee_charged      Decimal? @db.Decimal(8, 2)
+  notes            String?  @db.Text
 
-  created_at            DateTime  @default(now()) @db.Timestamptz
-  updated_at            DateTime  @updatedAt @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
 
   @@index([user_id, entry_date])
   @@map("journal_entries")
 }
 
-
 // CALENDAR SYNC (Pro feature)
 
-
 model CalendarConnection {
-  id                    String    @id @default(cuid())
-  user_id               String
-  user                  User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  provider              String    @default("google")      // "google" for MVP; "apple" via .ics
-  google_access_token   String?   @db.Text                // Encrypted at rest in production
-  google_refresh_token  String?   @db.Text                // Encrypted at rest
-  google_calendar_id    String?                           // Target calendar ID
-  token_expires_at      DateTime? @db.Timestamptz
+  provider             String    @default("google") // "google" for MVP; "apple" via .ics
+  google_access_token  String?   @db.Text // Encrypted at rest in production
+  google_refresh_token String?   @db.Text // Encrypted at rest
+  google_calendar_id   String? // Target calendar ID
+  token_expires_at     DateTime? @db.Timestamptz
 
-  is_active             Boolean   @default(true)
-  last_synced_at        DateTime? @db.Timestamptz
-  sync_error            String?
+  is_active      Boolean   @default(true)
+  last_synced_at DateTime? @db.Timestamptz
+  sync_error     String?
 
-  created_at            DateTime  @default(now()) @db.Timestamptz
-  updated_at            DateTime  @updatedAt @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
 
   @@unique([user_id, provider])
   @@map("calendar_connections")
 }
 
-
 // BILLING (Lemon Squeezy subscription lifecycle)
 
 model LemonSqueezyEvent {
-  id           String    @id  // Lemon Squeezy event ID — prevents duplicate processing
-  event_name   String        // "subscription_created", "subscription_expired", etc.
-  payload      Json          // Full webhook payload
+  id           String    @id // Lemon Squeezy event ID — prevents duplicate processing
+  event_name   String // "subscription_created", "subscription_expired", etc.
+  payload      Json // Full webhook payload
   processed    Boolean   @default(false)
   processed_at DateTime? @db.Timestamptz
   error        String?
@@ -506,68 +541,62 @@ model LemonSqueezyEvent {
   @@map("lemonsqueezy_events")
 }
 
-
 // NOTIFICATIONS
 
-
 model Notification {
-  id                    String           @id @default(cuid())
-  user_id               String
-  user                  User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  type                  NotificationType
-  title                 String
-  body                  String
-  is_read               Boolean          @default(false)
+  type    NotificationType
+  title   String
+  body    String
+  is_read Boolean          @default(false)
 
   // Context links
-  job_id                String?
-  job                   Job?             @relation(fields: [job_id], references: [id], onDelete: SetNull)
-  booking_id            String?
-  action_url            String?          // Deep link to relevant screen
+  job_id     String?
+  job        Job?    @relation(fields: [job_id], references: [id], onDelete: SetNull)
+  booking_id String?
+  action_url String? // Deep link to relevant screen
 
-  read_at               DateTime?        @db.Timestamptz
-  created_at            DateTime         @default(now()) @db.Timestamptz
+  read_at    DateTime? @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
 
   @@index([user_id, is_read])
   @@index([user_id, created_at])
   @@map("notifications")
 }
 
-
 // AUTH UTILITIES
 
-
 model PasswordResetToken {
-  id                    String    @id @default(cuid())
-  user_id               String
-  user                  User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  token_hash            String    @unique   // bcrypt hash of the raw token sent by email
-  expires_at            DateTime  @db.Timestamptz
-  used                  Boolean   @default(false)
-  used_at               DateTime? @db.Timestamptz
+  token_hash String    @unique // bcrypt hash of the raw token sent by email
+  expires_at DateTime  @db.Timestamptz
+  used       Boolean   @default(false)
+  used_at    DateTime? @db.Timestamptz
 
-  created_at            DateTime  @default(now()) @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
 
   @@index([user_id])
   @@map("password_reset_tokens")
 }
 
-
 // GEOCODE CACHE (DB layer — Redis is primary, this is fallback + warm-up)
 
-
 model GeocodeCache {
-  id                    String    @id @default(cuid())
-  address_normalised    String    @unique   // Lowercased, trimmed address string
-  lat                   Decimal   @db.Decimal(10, 7)
-  lng                   Decimal   @db.Decimal(10, 7)
-  source                String    @default("nominatim")  // "nominatim" | "geocodio" | "manual"
-  hit_count             Int       @default(1)            // How many times this cache was used
+  id                 String  @id @default(cuid())
+  address_normalised String  @unique // Lowercased, trimmed address string
+  lat                Decimal @db.Decimal(10, 7)
+  lng                Decimal @db.Decimal(10, 7)
+  source             String  @default("nominatim") // "nominatim" | "geocodio" | "manual"
+  hit_count          Int     @default(1) // How many times this cache was used
 
-  created_at            DateTime  @default(now()) @db.Timestamptz
-  last_used_at          DateTime  @default(now()) @db.Timestamptz
+  created_at   DateTime @default(now()) @db.Timestamptz
+  last_used_at DateTime @default(now()) @db.Timestamptz
 
   @@map("geocode_cache")
 }
