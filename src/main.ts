@@ -24,10 +24,13 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   // CORS
+  const corsOrigin =
+    configService.get<string>('APP_URL') ?? 'http://localhost:3000';
   app.enableCors({
-    origin: configService.get<string>('APP_URL') ?? 'http://localhost:4000',
+    origin: corsOrigin,
     credentials: true,
   });
+  logger.log(`CORS enabled for origin: ${corsOrigin}`);
 
   // Session with Redis store (Upstash via ioredis)
   const redisUrl = configService.get<string>('UPSTASH_REDIS_URL');
