@@ -1,51 +1,71 @@
 import {
-  Injectable,
   CanActivate,
   ExecutionContext,
+  Injectable,
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { REQUIRES_PRO_KEY } from '../decorators/requires-pro.decorator';
-import { UsersService } from '../../modules/users/users.service';
+import { PlanTier } from '../../../generated/prisma';
+import { RequestWithUser } from '../interfaces/request-with-user.interface';
+
+export const REQUIRED_PLAN_KEY = 'requiredPlan';
 
 @Injectable()
 export class PlanGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly usersService: UsersService,
-  ) {}
+  constructor(private reflector: Reflector) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiresPro = this.reflector.getAllAndOverride<boolean>(
-      REQUIRES_PRO_KEY,
+  canActivate(context: ExecutionContext): boolean {
+    const requiredPlan = this.reflector.getAllAndOverride<PlanTier[]>(
+      REQUIRED_PLAN_KEY,
       [context.getHandler(), context.getClass()],
     );
 
-    if (!requiresPro) {
+    if (!requiredPlan) {
+      // No plan required, allow access
       return true;
     }
 
-    const request = context
-      .switchToHttp()
-      .getRequest<{ session?: { userId?: string } }>();
-    const userId = request.session?.userId;
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const user = request.user;
 
-    if (!userId) {
-      return true; // AuthGuard will handle this
-    }
-
-    const user = await this.usersService.findById(userId);
     if (!user) {
+      throw new ForbiddenException('Authentication required');
+    }
+
+    // Check if user has required plan
+    // Handle both PRO and PRO_ANNUAL as valid Pro plans
+    const isProPlan =
+      user.plan === PlanTier.PRO || user.plan === PlanTier.PRO_ANNUAL;
+
+    if (requiredPlan.includes(PlanTier.PRO) && isProPlan) {
       return true;
     }
 
-    const proPlans = ['PRO', 'PRO_ANNUAL'];
-    if (proPlans.includes(user.plan)) {
+    // If specifically requiring FREE plan
+    if (
+      requiredPlan.length === 1 &&
+      requiredPlan[0] === PlanTier.FREE &&
+      user.plan === PlanTier.FREE
+    ) {
       return true;
     }
 
-    throw new ForbiddenException(
-      'This feature is available on the Pro plan. Upgrade to access.',
-    );
+    throw new ForbiddenException('Pro subscription required');
   }
 }
+
+// Decorator for marking routes as Pro-only
+export const RequiresPro = () => {
+  return (target: object, propertyKey?: string | symbol) => {
+    if (propertyKey) {
+      Reflect.defineMetadata(
+        REQUIRED_PLAN_KEY,
+        [PlanTier.PRO],
+        target,
+        propertyKey,
+      );
+    } else {
+      Reflect.defineMetadata(REQUIRED_PLAN_KEY, [PlanTier.PRO], target);
+    }
+  };
+};

@@ -10,6 +10,8 @@ import { QueueModule } from './queues/queue.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -61,6 +63,8 @@ import { AppService } from './app.service';
     AuthModule,
     UsersModule,
     HealthModule,
+    NotificationsModule,
+    BillingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

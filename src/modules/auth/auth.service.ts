@@ -6,12 +6,14 @@ import {
 } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { UserSettingsService } from '../users/user-settings.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly userSettingsService: UserSettingsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async register(data: {
@@ -47,6 +49,17 @@ export class AuthService {
     // Seed signing type defaults
     await this.userSettingsService.seedSigningDefaults(user.id);
 
+    // Send welcome email
+    try {
+      await this.notificationsService.sendWelcomeEmail(
+        user.email,
+        user.full_name || user.username || 'Notary',
+      );
+    } catch (error) {
+      console.warn(`Failed to send welcome email to ${user.email}:`, error);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
     return rest;
   }
@@ -64,6 +77,7 @@ export class AuthService {
 
     await this.usersService.updateLastSeen(user.id);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
     return rest;
   }
@@ -76,9 +90,18 @@ export class AuthService {
     }
 
     const token = await this.usersService.createPasswordResetToken(user.id);
-    // In production, send email via Resend here
-    // For now, we'll log it (would be: await this.emailService.sendPasswordReset(user.email, token))
-    console.log(`[Password Reset] Token for ${email}: ${token}`);
+
+    // Send password reset email via Resend
+    try {
+      const appUrl = process.env.APP_URL || 'http://localhost:3000';
+      await this.notificationsService.sendPasswordResetEmail(
+        user.email,
+        token,
+        appUrl,
+      );
+    } catch (error) {
+      console.error(`Failed to send password reset email to ${email}:`, error);
+    }
 
     return { sent: true };
   }
@@ -104,6 +127,7 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
     return rest;
   }
