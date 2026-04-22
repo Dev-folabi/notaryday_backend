@@ -7,8 +7,9 @@ export const validationSchema = Joi.object({
   // Redis
   UPSTASH_REDIS_URL: Joi.string().required(),
 
-  // Session
-  SESSION_SECRET: Joi.string().min(32).required(),
+  // JWT
+  JWT_SECRET: Joi.string().min(32).required(),
+  JWT_EXPIRES_IN: Joi.string().default('24h'),
 
   // OpenRouteService
   ORS_API_KEY: Joi.string().required(),

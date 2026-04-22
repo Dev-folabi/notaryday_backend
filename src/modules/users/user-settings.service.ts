@@ -23,12 +23,12 @@ export class UserSettingsService {
   async update(
     userId: string,
     data: {
-      homeBaseAddress?: string;
-      homeBaseLat?: number;
-      homeBaseLng?: number;
-      irsRatePerMile?: number;
-      vehicleType?: string;
-      minAcceptableNet?: number;
+      home_base_address?: string;
+      home_base_lat?: number;
+      home_base_lng?: number;
+      irs_rate_per_mile?: number;
+      vehicle_type?: string;
+      min_acceptable_net?: number;
       bookingPageEnabled?: boolean;
       bookingPageBio?: string;
       serviceAreaMiles?: number;
@@ -45,18 +45,18 @@ export class UserSettingsService {
     },
   ) {
     const updateData: any = {};
-    if (data.homeBaseAddress !== undefined)
-      updateData.home_base_address = data.homeBaseAddress;
-    if (data.homeBaseLat !== undefined)
-      updateData.home_base_lat = data.homeBaseLat;
-    if (data.homeBaseLng !== undefined)
-      updateData.home_base_lng = data.homeBaseLng;
-    if (data.irsRatePerMile !== undefined)
-      updateData.irs_rate_per_mile = data.irsRatePerMile;
-    if (data.vehicleType !== undefined)
-      updateData.vehicle_type = data.vehicleType;
-    if (data.minAcceptableNet !== undefined)
-      updateData.min_acceptable_net = data.minAcceptableNet;
+    if (data.home_base_address !== undefined)
+      updateData.home_base_address = data.home_base_address;
+    if (data.home_base_lat !== undefined)
+      updateData.home_base_lat = data.home_base_lat;
+    if (data.home_base_lng !== undefined)
+      updateData.home_base_lng = data.home_base_lng;
+    if (data.irs_rate_per_mile !== undefined)
+      updateData.irs_rate_per_mile = data.irs_rate_per_mile;
+    if (data.vehicle_type !== undefined)
+      updateData.vehicle_type = data.vehicle_type;
+    if (data.min_acceptable_net !== undefined)
+      updateData.min_acceptable_net = data.min_acceptable_net;
     if (data.bookingPageEnabled !== undefined)
       updateData.booking_page_enabled = data.bookingPageEnabled;
     if (data.bookingPageBio !== undefined)

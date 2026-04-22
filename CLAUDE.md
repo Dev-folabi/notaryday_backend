@@ -1,4 +1,5 @@
 # Notary Day — Backend Intelligence File
+
 > NestJS API | Node.js + TypeScript | PostgreSQL + Prisma | BullMQ + Redis
 > Read the root CLAUDE.md first. This file adds backend-specific detail only.
 
@@ -12,7 +13,7 @@ nest new notaryday_backend --package-manager npm --language typescript
 
 # Core dependencies
 npm install @nestjs/config @nestjs/throttler @nestjs/schedule @nestjs/bull
-npm install @nestjs/passport passport passport-local express-session
+npm install @nestjs/jwt passport-jwt
 npm install @prisma/client prisma
 npm install ioredis bullmq
 npm install bcrypt class-validator class-transformer zod
@@ -22,11 +23,10 @@ npm install ical-generator      # .ics feed generation
 npm install pdfkit               # Tax report PDF generation
 npm install joi                  # Env var validation schema
 npm install helmet               # Security headers
-npm install csurf                # CSRF protection
-npm install connect-redis        # Session store backed by Redis
+npm install connect-redis        # cache and token store backed by Redis
 
 # Dev dependencies
-npm install -D @types/passport-local @types/express-session @types/bcrypt
+npm install -D @types/passport-jwt @types/bcrypt
 npm install -D @types/csurf @types/pdfkit
 ```
 
@@ -38,7 +38,7 @@ Every domain is a self-contained NestJS module. No cross-module direct imports o
 
 ```
 src/
-├── main.ts                         ← Bootstrap, helmet, session, CSRF, global pipes
+├── main.ts                         ← Bootstrap, helmet, jwt, global pipes
 ├── app.module.ts                   ← Root module, imports all domain modules
 │
 ├── config/
@@ -48,7 +48,7 @@ src/
 │
 ├── common/
 │   ├── guards/
-│   │   ├── auth.guard.ts           ← Requires valid session
+│   │   ├── auth.guard.ts           ← Requires valid jwt token
 │   │   └── plan.guard.ts           ← @RequiresPro() decorator — checks user.plan
 │   ├── decorators/
 │   │   ├── current-user.decorator.ts
@@ -118,9 +118,7 @@ This prevents a slow AI parsing job from blocking API responses.
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as session from 'express-session';
 import * as connectRedis from 'connect-redis';
-import * as csurf from 'csurf';
 import * as helmet from 'helmet';
 import { createClient } from 'ioredis';
 import { AppModule } from './app.module';
@@ -143,40 +141,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Session with Redis store (Upstash via ioredis)
-  const RedisStore = connectRedis(session);
-  const redisClient = new IORedis(config.get('UPSTASH_REDIS_URL'), {
-    tls: { rejectUnauthorized: false },
-  });
-
-  app.use(
-    session({
-      store: new RedisStore({ client: redisClient }),
-      secret: config.get('SESSION_SECRET'),
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        secure: config.get('NODE_ENV') === 'production',
-        maxAge: 24 * 60 * 60 * 1000, // 24h default
-        sameSite: 'lax',
-      },
-    }),
-  );
-
-  // CSRF — exclude inbound email webhook and Lemon Squeezy webhook (they use HMAC auth)
-  app.use((req, res, next) => {
-    const excluded = ['/api/v1/email-import/inbound', '/api/v1/billing/webhook'];
-    if (excluded.includes(req.path)) return next();
-    csurf({ cookie: false })(req, res, next);
-  });
-
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,           // Lemon Squeezy unknown fields
+      whitelist: true, // Lemon Squeezy unknown fields
       forbidNonWhitelisted: true,
-      transform: true,           // Auto-transform to DTO types
+      transform: true, // Auto-transform to DTO types
     }),
   );
 
@@ -212,16 +182,16 @@ Connect with ioredis using the Upstash TLS URL. All keys follow this pattern:
 {resource}:{userId}:{qualifier}
 ```
 
-| Cache Key | TTL | Purpose |
-|---|---|---|
-| `geocode:{address_hash}` | 30 days | Geocoded lat/lng — never re-geocode same address |
-| `route:{userId}:{date}` | 1 hour | Optimised route for a user's day |
-| `citt:{userId}:{address_hash}:{time}` | 5 min | CITT result (short TTL — schedule changes) |
-| `booking:slots:{username}:{date}` | 2 min | Available booking slots |
-| `ors:matrix:{hash}` | 6 hours | ORS distance matrix result |
-| `session:{sessionId}` | 24h / 30d | express-session store |
+| Cache Key                             | TTL     | Purpose                                          |
+| ------------------------------------- | ------- | ------------------------------------------------ |
+| `geocode:{address_hash}`              | 30 days | Geocoded lat/lng — never re-geocode same address |
+| `route:{userId}:{date}`               | 1 hour  | Optimised route for a user's day                 |
+| `citt:{userId}:{address_hash}:{time}` | 5 min   | CITT result (short TTL — schedule changes)       |
+| `booking:slots:{username}:{date}`     | 2 min   | Available booking slots                          |
+| `ors:matrix:{hash}`                   | 6 hours | ORS distance matrix result                              |
 
 **Invalidation rules:**
+
 - When any job on date D is created/edited/deleted for user U → `DEL route:{U}:{D}`
 - When any job's status changes → `DEL route:{U}:{date_of_job}`
 - Geocode cache is never invalidated (addresses don't change)
@@ -242,6 +212,7 @@ export const QUEUE_CALENDAR_SYNC = 'calendar-sync';
 ```
 
 **Queue configuration:**
+
 ```typescript
 {
   defaultJobOptions: {
@@ -254,10 +225,11 @@ export const QUEUE_CALENDAR_SYNC = 'calendar-sync';
 ```
 
 **Job data shapes (always typed with interfaces):**
+
 ```typescript
 interface EmailImportJobData {
   userId: string;
-  emailId: string;        // Resend message ID
+  emailId: string; // Resend message ID
   rawEmailText: string;
   fromAddress: string;
   receivedAt: string;
@@ -285,7 +257,8 @@ Use OpenRouter for all AI calls. Default to free models. Validate every response
 ```typescript
 // modules/email-import/openrouter.service.ts
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
-const DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL ?? 'mistralai/mistral-7b-instruct:free';
+const DEFAULT_MODEL =
+  process.env.OPENROUTER_DEFAULT_MODEL ?? 'mistralai/mistral-7b-instruct:free';
 
 // Email parse prompt — always instruct to return JSON only
 const EMAIL_PARSE_SYSTEM_PROMPT = `
@@ -307,7 +280,16 @@ Return ONLY valid JSON matching this exact schema. No explanation, no markdown, 
 const EmailParseResultSchema = z.object({
   address: z.string().nullable(),
   appointment_time: z.string().datetime().nullable(),
-  signing_type: z.enum(['general','loan_refi','hybrid','purchase_closing','field_inspection','apostille']).nullable(),
+  signing_type: z
+    .enum([
+      'general',
+      'loan_refi',
+      'hybrid',
+      'purchase_closing',
+      'field_inspection',
+      'apostille',
+    ])
+    .nullable(),
   fee: z.number().min(0).max(10000).nullable(),
   platform_fee: z.number().min(0).max(1000).nullable(),
   client_name: z.string().max(200).nullable(),
@@ -317,6 +299,7 @@ const EmailParseResultSchema = z.object({
 ```
 
 **Rules:**
+
 - Always wrap OpenRouter calls in try/catch
 - If parse fails validation → partial form shown, user completes manually (never silently discard)
 - Log all AI calls with model, tokens used, and success/failure for cost tracking
@@ -344,6 +327,7 @@ const ORS_BASE = 'https://api.openrouteservice.org/v2';
 ```
 
 **Fallback behaviour:** If ORS returns 5xx or times out:
+
 - For CITT: return error state "Drive time check unavailable — please try again shortly". Do NOT show CITT result without drive time.
 - For route optimisation: fall back to time-ordered sequence. Show "Route optimisation temporarily unavailable — showing time order" banner.
 - Log every ORS failure with request details for debugging.
@@ -355,10 +339,10 @@ const ORS_BASE = 'https://api.openrouteservice.org/v2';
 ## 9. Auth Module Details
 
 ```typescript
-// Strategy: Passport local (email + password)
-// Session: express-session backed by Redis (connect-redis)
+// Strategy: Passport JWT (Bearer Token)
+// Strategy: Passport Local (Email + Password) - for initial login
 
-// User identification in session: req.session.userId (UUID string)
+// User identification: req.user (populated by AuthGuard/JwtStrategy)
 
 // Password reset flow:
 // 1. User requests reset → generate UUID token, hash it, store in PasswordResetToken table with 1h expiry
@@ -366,8 +350,8 @@ const ORS_BASE = 'https://api.openrouteservice.org/v2';
 // 3. User submits new password → find token by hash, verify not expired, update password, delete token
 
 // Route guards:
-// @UseGuards(AuthGuard)     → requires valid session
-// @RequiresPro()            → additionally requires user.plan === 'pro' or 'pro_annual'
+// @UseGuards(AuthGuard('jwt')) → requires valid JWT Bearer token
+// @RequiresPro()               → additionally requires user.plan === 'pro' or 'pro_annual'
 ```
 
 ---
@@ -383,7 +367,7 @@ POST   /auth/login                  Public
 POST   /auth/logout                 Auth
 POST   /auth/forgot-password        Public
 POST   /auth/reset-password         Public
-GET    /auth/me                     Auth → returns session user
+GET    /auth/me                     Auth → returns current authenticated user
 
 USERS / SETTINGS
 GET    /users/profile               Auth
@@ -516,20 +500,21 @@ All API responses follow this shape (enforced by `TransformInterceptor`):
 
 These are the default durations. Users can override per-type in Settings, and per-job in the job form.
 
-| Signing Type | Default Signing Duration | Default Scanback Duration | Total Block |
-|---|---|---|---|
-| general | 30 min | 0 min | 30 min |
-| loan_refi | 60 min | 20 min | 80 min |
-| hybrid | 75 min | 18 min | 93 min |
-| purchase_closing | 90 min | 28 min | 118 min |
-| field_inspection | 45 min | 0 min | 45 min |
-| apostille | 20 min | 0 min | 20 min |
+| Signing Type     | Default Signing Duration | Default Scanback Duration | Total Block |
+| ---------------- | ------------------------ | ------------------------- | ----------- |
+| general          | 30 min                   | 0 min                     | 30 min      |
+| loan_refi        | 60 min                   | 20 min                    | 80 min      |
+| hybrid           | 75 min                   | 18 min                    | 93 min      |
+| purchase_closing | 90 min                   | 28 min                    | 118 min     |
+| field_inspection | 45 min                   | 0 min                     | 45 min      |
+| apostille        | 20 min                   | 0 min                     | 20 min      |
 
 Scanback is 0 for general, field_inspection, and apostille — they require no document scanning.
 
 ## 14. Invoice Generation (No Payment Gateway)
 
 ### How It Works
+
 1. Notary marks job as complete (status → complete)
 2. Auto-trigger: QUEUE_INVOICE job enqueued
 3. Worker generates PDF invoice via pdfkit
@@ -538,6 +523,7 @@ Scanback is 0 for general, field_inspection, and apostille — they require no d
 6. Notary taps "Mark as paid" when payment arrives → is_paid: true, paid_at: now()
 
 ### Invoice PDF Contents
+
 - Notary's full name, phone, email, NNA credentials
 - Invoice number (INV-YYYY-NNNN — sequential per user)
 - Job date, address, signing type, duration
@@ -547,15 +533,17 @@ Scanback is 0 for general, field_inspection, and apostille — they require no d
 - "Payment due upon receipt" note
 
 ### UserSettings additions needed for invoicing
-payment_info: Json   // { zelle?: string, venmo?: string, paypal?: string, 
-                     //   bank_name?: string, account_last4?: string, 
-                     //   routing_last4?: string, other?: string }
-invoice_notes: String?  // Default note printed on every invoice e.g. 
-                        // "Thank you for your business"
-invoice_due_days: Int   @default(0)  // 0 = due on receipt, 30 = net 30
+
+payment_info: Json // { zelle?: string, venmo?: string, paypal?: string,
+// bank_name?: string, account_last4?: string,
+// routing_last4?: string, other?: string }
+invoice_notes: String? // Default note printed on every invoice e.g.
+// "Thank you for your business"
+invoice_due_days: Int @default(0) // 0 = due on receipt, 30 = net 30
 
 ### Lemon Squeezy Webhook Events to Handle
-- order_created       → plan activated (one-time — not subscription)
+
+- order_created → plan activated (one-time — not subscription)
 - subscription_created → plan set to PRO or PRO_ANNUAL
 - subscription_updated → handle plan changes, renewal
 - subscription_cancelled → schedule downgrade at period end

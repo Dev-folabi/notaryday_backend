@@ -39,7 +39,7 @@ The backend powers five core capabilities:
 ┌─────────────────────────────────────────────────────────────────┐
 │                         CLIENT (Next.js)                        │
 └─────────────────────────┬───────────────────────────────────────┘
-                          │ HTTPS + Session Cookie
+                          │ HTTPS + JWT (Authorization: Bearer)
 ┌─────────────────────────▼───────────────────────────────────────┐
 │                    NestJS API  (:3001)                          │
 │                                                                 │
@@ -53,10 +53,10 @@ The backend powers five core capabilities:
 ┌──────▼──────┐ ┌─────▼──────┐ ┌─────────────▼───────────────────┐
 │ PostgreSQL  │ │   Upstash  │ │        BullMQ Workers           │
 │  (Prisma)   │ │   Redis    │ │                                 │
-│             │ │            │ │  email-import · screenshot      │
-│  14 models  │ │  Sessions  │ │  invoice · notification        │
-│  migrations │ │  Cache     │ │  calendar-sync                 │
-│  relations  │ │  Queues    │ │                                 │
+│             │ │ Refresh Token│  email-import · screenshot      │
+│  14 models  │ │  Cache     │ │  invoice · notification        │
+│  migrations │ │  Queues    │ │  calendar-sync                 │
+│  relations  │ │            │ │                                 │
 └─────────────┘ └────────────┘ └─────────────────────────────────┘
                                           │
               ┌───────────────────────────┼─────────────────────┐
@@ -75,7 +75,7 @@ The backend powers five core capabilities:
 
 **Redis as the Performance Layer** — Nominatim (the geocoding API) enforces a strict 1 request/second rate limit. Without aggressive caching, a notary entering 10 job addresses would take 10+ seconds. All geocoded coordinates are cached in Redis with a 30-day TTL, targeting a >90% cache hit rate. Route optimisation results are cached per user per date (1-hour TTL), invalidated on any job mutation for that date.
 
-**Session-Based Auth over JWT** — For a server-rendered browser product, sessions are simpler, more secure (no client-side token storage), and instantly revocable. express-session backed by Redis via Upstash. JWT would add complexity with no benefit for this use case.
+**JWT-Based Auth** — For a mobile-first product where the same user may use multiple clients (PWA, mobile app shell), JWT provides a stateless, scalable authentication mechanism. Refresh tokens are stored in Redis for security and single-device enforcement if needed.
 
 **Zod Validation on AI Outputs** — All OpenRouter API responses are validated against a strict Zod schema before any database write. The AI is a data extraction tool, not a trusted source. If validation fails, a partial form is shown and the user completes the missing fields manually. The system never silently creates bad data from a malformed AI response.
 
@@ -86,6 +86,7 @@ The backend powers five core capabilities:
 ### Core Domain Logic
 
 #### CITT (Can I Take This?) Engine
+
 The heart of the product. Given a prospective job, runs three parallel checks:
 
 ```typescript
@@ -117,19 +118,23 @@ async runCITT(userId: string, dto: RunCITTDto): Promise<CITTResult> {
 ```
 
 **Verdict thresholds:**
+
 - `TAKE_IT` — Schedule fits (≥10 min buffer) AND net earnings ≥ $20
 - `RISKY` — Gap < 10 min buffer OR net earnings $10–$19
 - `DECLINE` — Schedule conflict OR net earnings < $10
 
 #### Route Optimisation Engine
+
 Accepts all confirmed jobs for a date, calls OpenRouteService's optimisation endpoint (which uses Vroom internally for TSP solving), respects all appointment times as hard constraints, then automatically inserts scanback time blocks after qualifying signing types.
 
 **Fallback chain:**
+
 1. ORS optimisation → cached result
 2. ORS unavailable → time-ordered sequence with cached drive times + "optimisation unavailable" banner
 3. No cached drive times → time-ordered sequence only
 
 #### Gap Finder
+
 Post-optimisation, scans pending jobs against each open window in the confirmed schedule:
 
 ```
@@ -143,6 +148,7 @@ Rank by:    net_earnings DESC
 ```
 
 #### Booking Page Availability Engine
+
 Computes available slots for a given date without ever exposing the notary's actual schedule to the client:
 
 ```
@@ -232,16 +238,19 @@ src/
 14 models across 3 concern layers. Full schema at `prisma/schema.prisma`.
 
 **User & Settings Layer**
+
 - `User` — authentication, plan tier, onboarding state, profile
 - `UserSettings` — home base, IRS rate, booking page config, notification prefs, payment info
 - `SigningTypeDefault` — per-user duration overrides for each of 6 signing types
 
 **Core Operations Layer**
+
 - `Job` — the central entity. 14 status values, 6 signing types, 5 source types. Stores computed profitability fields (net_earnings, effective_hourly) after route calculation. Compound indexes on `(user_id, appointment_time, status)` for Today view queries.
 - `Booking` — client-submitted booking requests. Drives the `pending_review` → `confirmed` | `declined` flow.
 - `EmailImport` — raw email + AI parse results + import status. Retained for debugging and duplicate detection.
 
 **Business Operations Layer**
+
 - `Invoice` — generated PDFs, payment tracking, mark-paid
 - `Expense` — categorised business expenses with receipt storage
 - `JournalEntry` — notarial journal (IRS-compliant act logging)
@@ -260,21 +269,24 @@ src/
 All endpoints prefixed `/api/v1/`. Full list of 45+ endpoints across 12 domains.
 
 ### Auth
+
 ```
 POST   /auth/register
 POST   /auth/login
 POST   /auth/logout
 POST   /auth/forgot-password
 POST   /auth/reset-password
-GET    /auth/me
+GET    /auth/me                 # Get current authenticated user details
 ```
 
 ### CITT
+
 ```
 POST   /citt/check              # Free tier — unlimited. The core acquisition hook.
 ```
 
 ### Jobs
+
 ```
 GET    /jobs                    # ?date, ?status, ?page, ?limit
 POST   /jobs
@@ -286,6 +298,7 @@ POST   /jobs/:id/invoice        # Pro — trigger invoice generation
 ```
 
 ### Smart Day Planner (Pro)
+
 ```
 GET    /planner/today           # ?date — optimised sequence + scanback blocks + gap candidates
 POST   /planner/optimise        # Trigger ORS optimisation for a date
@@ -293,12 +306,14 @@ GET    /planner/gaps            # ?date — gap finder results
 ```
 
 ### Public Booking Page
+
 ```
 GET    /book/:username/slots    # ?date — available slots (no auth)
 POST   /book/:username/request  # Submit booking (no auth)
 ```
 
 ### Billing
+
 ```
 POST   /billing/subscribe       # Returns Lemon Squeezy checkout URL
 POST   /billing/cancel
@@ -307,9 +322,10 @@ POST   /billing/webhook         # Lemon Squeezy webhook (HMAC verified)
 ```
 
 ### Response Envelope
+
 ```json
 {
-  "data": { },
+  "data": {},
   "meta": { "timestamp": "2026-04-15T10:00:00Z" }
 }
 ```
@@ -368,7 +384,8 @@ Key variables:
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/notaryday
 UPSTASH_REDIS_URL=rediss://...          # TLS URL from Upstash dashboard
-SESSION_SECRET=...                       # Random 64-char string
+JWT_SECRET=...                       # Random 64-char string
+JWT_EXPIRES_IN=...                   # JWT expiration time
 ORS_API_KEY=...
 OPENROUTER_API_KEY=...
 OPENROUTER_DEFAULT_MODEL=mistralai/mistral-7b-instruct:free
@@ -430,21 +447,21 @@ Coverage target: 80%+ on the four modules above.
 
 ## Performance
 
-| Operation | Target | Strategy |
-|---|---|---|
-| CITT response | < 3s | Redis geocode cache + ORS p95 latency |
-| Route optimisation | < 3s | Redis route cache (1hr TTL) + ORS |
-| Booking slot calculation | < 2s | Redis slot cache (2min TTL) |
-| Email import parse | < 15s | Async BullMQ worker — does not block API |
-| Geocoding cache hit rate | > 90% | 30-day Redis TTL + DB fallback |
-| Page load (4G) | < 2.5s | Lean response payloads, no N+1 queries |
+| Operation                | Target | Strategy                                 |
+| ------------------------ | ------ | ---------------------------------------- |
+| CITT response            | < 3s   | Redis geocode cache + ORS p95 latency    |
+| Route optimisation       | < 3s   | Redis route cache (1hr TTL) + ORS        |
+| Booking slot calculation | < 2s   | Redis slot cache (2min TTL)              |
+| Email import parse       | < 15s  | Async BullMQ worker — does not block API |
+| Geocoding cache hit rate | > 90%  | 30-day Redis TTL + DB fallback           |
+| Page load (4G)           | < 2.5s | Lean response payloads, no N+1 queries   |
 
 ---
 
 ## Security
 
 - **Passwords** — bcrypt, minimum 12 salt rounds
-- **Sessions** — express-session backed by Upstash Redis. 24h default, 30d with remember-me. Secure + HttpOnly + SameSite=Lax cookies in production.
+- **JWT Auth** — Stateless authentication using JSON Web Tokens. Access tokens are short-lived, while refresh tokens are stored in Upstash Redis and rotated upon use.
 - **CSRF** — csurf middleware on all state-mutating routes
 - **Helmet** — Security headers on all responses
 - **Input validation** — class-validator + class-transformer on all DTOs. Whitelist mode: unknown fields stripped automatically.
@@ -459,33 +476,34 @@ Coverage target: 80%+ on the four modules above.
 
 ## Tech Stack
 
-| Layer | Technology | Version |
-|---|---|---|
-| Runtime | Node.js | 20 LTS |
-| Framework | NestJS | 10 |
-| Language | TypeScript | 5 |
-| Database | PostgreSQL | 16 |
-| ORM | Prisma | 5 |
-| Cache / Sessions | Redis (Upstash) via ioredis | 5 |
-| Queue | BullMQ | 5 |
-| Auth | Passport.js local + express-session | — |
-| Routing API | OpenRouteService | v2 |
-| Geocoding | Nominatim (OSM) | — |
-| AI Parsing | OpenRouter API | — |
-| Email | Resend | — |
-| File Storage | Cloudflare R2 (S3-compatible) | — |
-| Billing | Lemon Squeezy | — |
-| PDF Generation | pdfkit | — |
-| Calendar | Google Calendar API + ical-generator | — |
-| Validation | class-validator + Zod | — |
-| Security | helmet + csurf + bcrypt | — |
-| Testing | Jest | 29 |
+| Layer            | Technology                           | Version |
+| ---------------- | ------------------------------------ | ------- |
+| Runtime          | Node.js                              | 20 LTS  |
+| Framework        | NestJS                               | 10      |
+| Language         | TypeScript                           | 5       |
+| Database         | PostgreSQL                           | 16      |
+| ORM              | Prisma                               | 5       |
+| Cache / Sessions | Redis (Upstash) via ioredis          | 5       |
+| Queue            | BullMQ                               | 5       |
+| Auth             | Passport.js (Local + JWT)            | —       |
+| Routing API      | OpenRouteService                     | v2      |
+| Geocoding        | Nominatim (OSM)                      | —       |
+| AI Parsing       | OpenRouter API                       | —       |
+| Email            | Resend                               | —       |
+| File Storage     | Cloudflare R2 (S3-compatible)        | —       |
+| Billing          | Lemon Squeezy                        | —       |
+| PDF Generation   | pdfkit                               | —       |
+| Calendar         | Google Calendar API + ical-generator | —       |
+| Validation       | class-validator + Zod                | —       |
+| Security         | helmet + csurf + bcrypt              | —       |
+| Testing          | Jest                                 | 29      |
 
 ---
 
 ## Deployment
 
 Designed for deployment on **Railway** or **Render**. Both support:
+
 - Multiple services from a single repo (API process + Worker process)
 - PostgreSQL managed database
 - Automatic deploys from GitHub

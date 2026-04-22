@@ -8,10 +8,9 @@ export const redisConfig = registerAs('redis', () => ({
   url: process.env.UPSTASH_REDIS_URL!,
 }));
 
-export const sessionConfig = registerAs('session', () => ({
-  secret: process.env.SESSION_SECRET!,
-  cookieMaxAge: 24 * 60 * 60 * 1000, // 24 hours
-  cookieRememberMaxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+export const jwtConfig = registerAs('jwt', () => ({
+  secret: process.env.JWT_SECRET!,
+  expiresIn: process.env.JWT_EXPIRES_IN ?? '24h',
 }));
 
 export const appConfig = registerAs('app', () => ({
@@ -61,7 +60,7 @@ export const r2Config = registerAs('r2', () => ({
 export default [
   databaseConfig,
   redisConfig,
-  sessionConfig,
+  jwtConfig,
   appConfig,
   orsConfig,
   openRouterConfig,

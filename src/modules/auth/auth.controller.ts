@@ -3,19 +3,19 @@ import {
   Post,
   Body,
   Req,
-  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
   Get,
   Param,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { Public } from '../../common/decorators/public.decorator';
-import { AuthGuard } from '../../common/guards/auth.guard';
+import { AuthGuard, RequestWithUser } from '../../common/guards/auth.guard';
 import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { User } from 'generated/prisma';
 
 class RegisterDto {
   @IsEmail()
@@ -65,62 +65,26 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Req() req: Request) {
-    const user = await this.authService.register(dto);
-
-    // Auto-login: set session
-    (req.session as any).userId = user.id;
-    (req.session as any).user = {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      plan: user.plan,
-    };
-
-    return user;
+  async register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
   }
 
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(
-    @Body() dto: LoginDto,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const user = await this.authService.login(dto.email, dto.password);
-
-    // Set session
-    (req.session as any).userId = user.id;
-    (req.session as any).user = {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      plan: user.plan,
-    };
-
-    // Handle remember-me cookie extension
-    const rememberMe = req.body.rememberMe;
-    if (rememberMe) {
-      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
-    }
-
-    return user;
+  async login(@Body() dto: LoginDto) {
+    return this.authService.login(dto.email, dto.password);
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@Req() req: Request, @Res() res: Response) {
-    return new Promise<void>((resolve, reject) => {
-      req.session.destroy((err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        res.clearCookie('connect.sid');
-        resolve();
-      });
-    });
+  async logout(@Req() req: Request) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      await this.authService.revokeToken(token);
+    }
+    return { success: true };
   }
 
   @Public()
@@ -139,9 +103,8 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(AuthGuard)
-  async me(@Req() req: Request) {
-    const userId = (req.session as any).userId;
-    return this.authService.getMe(userId);
+  me(@Req() req: RequestWithUser): User {
+    return req.user;
   }
 
   @Get('username-check/:username')

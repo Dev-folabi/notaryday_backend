@@ -15,10 +15,11 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import {
   IsString,
   IsOptional,
-  IsEmail,
   IsBoolean,
   IsNumber,
+  IsEnum,
 } from 'class-validator';
+import { NavApp } from '../../../generated/prisma';
 
 class UpdateProfileDto {
   @IsOptional()
@@ -45,27 +46,27 @@ class UpdateProfileDto {
 class UpdateSettingsDto {
   @IsOptional()
   @IsString()
-  homeBaseAddress?: string;
+  home_base_address?: string;
 
   @IsOptional()
   @IsNumber()
-  homeBaseLat?: number;
+  home_base_lat?: number;
 
   @IsOptional()
   @IsNumber()
-  homeBaseLng?: number;
+  home_base_lng?: number;
 
   @IsOptional()
   @IsNumber()
-  irsRatePerMile?: number;
+  irs_rate_per_mile?: number;
 
   @IsOptional()
   @IsString()
-  vehicleType?: string;
+  vehicle_type?: string;
 
   @IsOptional()
   @IsNumber()
-  minAcceptableNet?: number;
+  min_acceptable_net?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -96,8 +97,16 @@ class UpdateSettingsDto {
   clientEtaEnabled?: boolean;
 
   @IsOptional()
-  @IsString()
-  preferredNavApp?: string;
+  @IsEnum(NavApp)
+  preferredNavApp?: NavApp;
+
+  @IsOptional()
+  @IsBoolean()
+  onboarding_completed?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  onboarding_step?: number;
 }
 
 @Controller('users')
@@ -115,6 +124,7 @@ export class UsersController {
       throw new ConflictException('User not found');
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
     return rest;
   }
@@ -132,6 +142,7 @@ export class UsersController {
       credentials: dto.credentials,
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
     return rest;
   }
@@ -146,13 +157,24 @@ export class UsersController {
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateSettingsDto,
   ) {
-    return this.userSettingsService.update(userId, {
-      homeBaseAddress: dto.homeBaseAddress,
-      homeBaseLat: dto.homeBaseLat,
-      homeBaseLng: dto.homeBaseLng,
-      irsRatePerMile: dto.irsRatePerMile,
-      vehicleType: dto.vehicleType,
-      minAcceptableNet: dto.minAcceptableNet,
+    if (
+      dto.onboarding_completed !== undefined ||
+      dto.onboarding_step !== undefined
+    ) {
+      const step =
+        dto.onboarding_step ?? (dto.onboarding_completed ? 4 : undefined);
+      if (step !== undefined) {
+        await this.usersService.updateOnboardingStep(userId, step);
+      }
+    }
+
+    const settings = await this.userSettingsService.update(userId, {
+      home_base_address: dto.home_base_address,
+      home_base_lat: dto.home_base_lat,
+      home_base_lng: dto.home_base_lng,
+      irs_rate_per_mile: dto.irs_rate_per_mile,
+      vehicle_type: dto.vehicle_type,
+      min_acceptable_net: dto.min_acceptable_net,
       bookingPageEnabled: dto.bookingPageEnabled,
       bookingPageBio: dto.bookingPageBio,
       serviceAreaMiles: dto.serviceAreaMiles,
@@ -160,8 +182,19 @@ export class UsersController {
       remindersEnabled: dto.remindersEnabled,
       reminderLeadMins: dto.reminderLeadMins,
       clientEtaEnabled: dto.clientEtaEnabled,
-      preferredNavApp: dto.preferredNavApp as any,
+      preferredNavApp: dto.preferredNavApp,
     });
+
+    return settings;
+  }
+
+  @Patch('onboarding/complete')
+  @HttpCode(HttpStatus.OK)
+  async completeOnboarding(@CurrentUser('id') userId: string) {
+    const user = await this.usersService.setOnboardingComplete(userId);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password_hash, ...rest } = user;
+    return rest;
   }
 
   @Get('signing-defaults')

@@ -1,15 +1,13 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import session from 'express-session';
-import { RedisStore } from 'connect-redis';
 import Redis from 'ioredis';
 import helmet from 'helmet';
-import csurf from 'csurf';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { AuthGuard } from './common/guards/auth.guard';
+import { AuthService } from './modules/auth/auth.service';
 import 'dotenv/config';
 
 async function bootstrap() {
@@ -32,7 +30,7 @@ async function bootstrap() {
   });
   logger.log(`CORS enabled for origin: ${corsOrigin}`);
 
-  // Session with Redis store (Upstash via ioredis)
+  // Redis store (Upstash via ioredis)
   const redisUrl = configService.get<string>('UPSTASH_REDIS_URL');
   if (!redisUrl) {
     logger.error('UPSTASH_REDIS_URL is not configured');
@@ -50,53 +48,10 @@ async function bootstrap() {
     logger.log('Redis connected to Upstash');
   } catch (err: any) {
     logger.warn(
-      'Redis connection failed, continuing without session store:',
+      'Redis connection failed, continuing without redis',
       err instanceof Error ? err.message : err,
     );
   }
-
-  app.use(
-    session({
-      store: new RedisStore({ client: redisClient }),
-      secret:
-        configService.get<string>('SESSION_SECRET') ??
-        'dev-secret-change-in-production',
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        secure: configService.get<string>('NODE_ENV') === 'production',
-        maxAge: 24 * 60 * 60 * 1000, // 24h default
-        sameSite: 'lax',
-      },
-    }),
-  );
-
-  // CSRF — exclude inbound email webhook, Lemon Squeezy webhook, and health check (they use HMAC/special auth)
-  app.use((req: any, res: any, next: () => void) => {
-    const excluded = [
-      '/api/v1/email-import/inbound',
-      '/api/v1/billing/webhook',
-      '/api/v1/health',
-    ];
-    if (
-      excluded.some((path) => (req as { path: string }).path.startsWith(path))
-    ) {
-      return next();
-    }
-    if (
-      ['GET', 'HEAD', 'OPTIONS'].includes((req as { method: string }).method)
-    ) {
-      return next();
-    }
-    return (
-      csurf({ cookie: false }) as (
-        req: any,
-        res: any,
-        next: (err?: any) => void,
-      ) => void
-    )(req, res, next);
-  });
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -116,7 +71,8 @@ async function bootstrap() {
 
   // Apply AuthGuard globally
   const reflector = app.get(Reflector);
-  const authGuard = new AuthGuard(reflector);
+  const authService = app.get(AuthService);
+  const authGuard = new AuthGuard(reflector, authService);
   app.useGlobalGuards(authGuard);
 
   const port = configService.get<number>('PORT') ?? 4000;

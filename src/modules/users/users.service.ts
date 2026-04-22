@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { User, PlanTier } from '../../../generated/prisma';
 
 const BCRYPT_SALT_ROUNDS = 12;
@@ -122,6 +123,7 @@ export class UsersService {
         onboarding_completed: true,
         onboarding_step: 4,
       },
+      include: { settings: true },
     });
   }
 
@@ -132,6 +134,7 @@ export class UsersService {
         onboarding_step: step,
         onboarding_completed: step >= 4,
       },
+      include: { settings: true },
     });
   }
 

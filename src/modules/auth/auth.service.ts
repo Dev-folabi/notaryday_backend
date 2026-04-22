@@ -3,17 +3,26 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { JwtService } from '@nestjs/jwt';
+import { RedisService } from '../../config/redis.service';
 
 @Injectable()
 export class AuthService {
   constructor(
+    @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => UserSettingsService))
     private readonly userSettingsService: UserSettingsService,
+    @Inject(forwardRef(() => NotificationsService))
     private readonly notificationsService: NotificationsService,
+    private readonly jwtService: JwtService,
+    private readonly redisService: RedisService,
   ) {}
 
   async register(data: {
@@ -61,7 +70,9 @@ export class AuthService {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
-    return rest;
+
+    const token = this.jwtService.sign({ sub: user.id, email: user.email });
+    return { user: rest, token };
   }
 
   async login(email: string, password: string) {
@@ -79,13 +90,14 @@ export class AuthService {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
-    return rest;
+
+    const token = this.jwtService.sign({ sub: user.id, email: user.email });
+    return { user: rest, token };
   }
 
   async forgotPassword(email: string): Promise<{ sent: boolean }> {
     const user = await this.usersService.findByEmail(email);
     if (!user) {
-      // Don't reveal whether email exists
       return { sent: true };
     }
 
@@ -130,5 +142,27 @@ export class AuthService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
     return rest;
+  }
+
+  async revokeToken(token: string) {
+    const decoded = this.jwtService.decode<{ exp?: number }>(token);
+    if (!decoded || !decoded.exp) return;
+
+    const remainingTime = decoded.exp - Math.floor(Date.now() / 1000);
+    if (remainingTime > 0) {
+      await this.redisService.set(`blacklist:${token}`, 'true', remainingTime);
+    }
+  }
+
+  async isTokenBlacklisted(token: string): Promise<boolean> {
+    const blacklisted = await this.redisService.get(`blacklist:${token}`);
+    return !!blacklisted;
+  }
+
+  async getMeFromToken(token: string) {
+    const payload = this.jwtService.verify<{ sub: string; email: string }>(
+      token,
+    );
+    return this.getMe(payload.sub);
   }
 }
