@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { AuthService } from '../../modules/auth/auth.service';
-import { User } from 'generated/prisma';
+import { Prisma, User } from 'generated/prisma';
 import { Request } from 'express';
 
 export interface RequestWithUser extends Request {
@@ -50,7 +50,11 @@ export class AuthGuard implements CanActivate {
       const user = await this.authService.getMeFromToken(token);
       (request as RequestWithUser).user = user as User;
       return true;
-    } catch {
+    } catch (e) {
+      console.error('AuthGuard authentication failed:', e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        throw e;
+      }
       throw new UnauthorizedException('Invalid token');
     }
   }

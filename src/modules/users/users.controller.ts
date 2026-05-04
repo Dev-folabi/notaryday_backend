@@ -18,6 +18,7 @@ import {
   IsBoolean,
   IsNumber,
   IsEnum,
+  IsArray,
 } from 'class-validator';
 import { NavApp } from '../../../generated/prisma';
 
@@ -107,6 +108,18 @@ class UpdateSettingsDto {
   @IsOptional()
   @IsNumber()
   onboarding_step?: number;
+
+  @IsOptional()
+  @IsNumber()
+  scanback_duration_mins?: number;
+
+  @IsOptional()
+  @IsArray()
+  signing_defaults?: {
+    signing_type: string;
+    signing_duration_mins: number;
+    scanback_duration_mins: number;
+  }[];
 }
 
 @Controller('users')
@@ -183,7 +196,21 @@ export class UsersController {
       reminderLeadMins: dto.reminderLeadMins,
       clientEtaEnabled: dto.clientEtaEnabled,
       preferredNavApp: dto.preferredNavApp,
+      scanback_duration_mins: dto.scanback_duration_mins,
     });
+
+    if (dto.signing_defaults && Array.isArray(dto.signing_defaults)) {
+      for (const sd of dto.signing_defaults) {
+        if (sd.signing_type) {
+          await this.userSettingsService.upsertSigningDefault(
+            userId,
+            sd.signing_type,
+            sd.signing_duration_mins,
+            sd.scanback_duration_mins,
+          );
+        }
+      }
+    }
 
     return settings;
   }

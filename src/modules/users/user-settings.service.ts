@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
-import { NavApp, SigningType } from '../../../generated/prisma';
+import { NavApp, SigningType, Prisma } from '../../../generated/prisma';
 
 @Injectable()
 export class UserSettingsService {
@@ -33,18 +33,40 @@ export class UserSettingsService {
       bookingPageBio?: string;
       serviceAreaMiles?: number;
       bookingBufferMins?: number;
-      bookingPageActiveHours?: any;
-      bookingPageServices?: any;
-      paymentInfo?: any;
+      bookingPageActiveHours?: Prisma.InputJsonValue;
+      bookingPageServices?: Prisma.InputJsonValue;
+      paymentInfo?: Prisma.InputJsonValue;
       invoiceNotes?: string;
       invoiceDueDays?: number;
       remindersEnabled?: boolean;
       reminderLeadMins?: number;
       clientEtaEnabled?: boolean;
       preferredNavApp?: NavApp;
+      scanback_duration_mins?: number;
     },
   ) {
-    const updateData: any = {};
+    const updateData: {
+      home_base_address?: string;
+      home_base_lat?: number;
+      home_base_lng?: number;
+      irs_rate_per_mile?: number;
+      vehicle_type?: string;
+      min_acceptable_net?: number;
+      booking_page_enabled?: boolean;
+      booking_page_bio?: string;
+      service_area_miles?: number;
+      booking_buffer_mins?: number;
+      booking_page_active_hours?: Prisma.InputJsonValue;
+      booking_page_services?: Prisma.InputJsonValue;
+      payment_info?: Prisma.InputJsonValue;
+      invoice_notes?: string;
+      invoice_due_days?: number;
+      reminders_enabled?: boolean;
+      reminder_lead_mins?: number;
+      client_eta_enabled?: boolean;
+      preferred_nav_app?: NavApp;
+      scanback_duration_mins?: number;
+    } = {};
     if (data.home_base_address !== undefined)
       updateData.home_base_address = data.home_base_address;
     if (data.home_base_lat !== undefined)
@@ -83,6 +105,8 @@ export class UserSettingsService {
       updateData.client_eta_enabled = data.clientEtaEnabled;
     if (data.preferredNavApp !== undefined)
       updateData.preferred_nav_app = data.preferredNavApp;
+    if (data.scanback_duration_mins !== undefined)
+      updateData.scanback_duration_mins = data.scanback_duration_mins;
 
     return this.prisma.userSettings.upsert({
       where: { user_id: userId },

@@ -156,9 +156,10 @@ model UserSettings {
   home_base_lng     Decimal? @db.Decimal(10, 7)
 
   // Mileage & profitability
-  irs_rate_per_mile  Decimal @default(0.72) @db.Decimal(5, 4)
-  vehicle_type       String? // "car", "truck", "suv" — for future rate lookup
-  min_acceptable_net Decimal @default(20.00) @db.Decimal(8, 2) // Below this = DECLINE
+  irs_rate_per_mile      Decimal @default(0.72) @db.Decimal(5, 4)
+  vehicle_type           String? // "car", "truck", "suv" — for future rate lookup
+  min_acceptable_net     Decimal @default(20.00) @db.Decimal(8, 2) // Below this = DECLINE
+  scanback_duration_mins Int?
 
   // Booking page settings
   booking_page_enabled      Boolean @default(false)
