@@ -15,6 +15,9 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { GeocodingModule } from './modules/geocoding/geocoding.module';
+import { JobsModule } from './modules/jobs/jobs.module';
+import { CittModule } from './modules/citt/citt.module';
 
 @Module({
   imports: [
@@ -66,6 +69,9 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     HealthModule,
     NotificationsModule,
     BillingModule,
+    GeocodingModule,
+    JobsModule,
+    CittModule,
   ],
   controllers: [AppController],
   providers: [AppService],
