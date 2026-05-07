@@ -17,7 +17,7 @@ export class PrismaService
   private pool: pg.Pool;
 
   constructor() {
-    // ✅ Validate env variable early
+    // Validate env variable early
     if (!process.env.DATABASE_URL) {
       throw new Error('DATABASE_URL environment variable is not set');
     }
@@ -27,13 +27,14 @@ export class PrismaService
       ssl: {
         rejectUnauthorized: false,
       },
-      max: 5,
-      min: 0,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 15000,
+      max: 10,
+      min: 2,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 30000,
+      query_timeout: 60000,
     });
 
-    // ✅ Catch pool-level errors
+    // Catch pool-level errors
     pool.on('error', (err) => {
       this.logger.error(`Pool error: ${err.message}`);
     });
@@ -49,7 +50,7 @@ export class PrismaService
 
     while (retries > 0) {
       try {
-        // ✅ Test raw pool connection first
+        // Test raw pool connection first
         const client = await this.pool.connect();
         client.release();
         this.logger.log('✅ pg.Pool connected to NeonDB');
