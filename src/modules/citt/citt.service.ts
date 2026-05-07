@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import crypto from 'crypto';
 import axios from 'axios';
 import { PrismaService } from '../../config/prisma.service';
 import { RedisService } from '../../config/redis.service';
@@ -25,22 +26,27 @@ export type CittVerdict = 'TAKE_IT' | 'RISKY' | 'DECLINE';
 export interface CittResult {
   verdict: CittVerdict;
   reason: string;
-  distanceMiles: number;
-  driveTimeMins: number;
-  mileageCost: number;
-  netEarnings: number;
-  effectiveHourly: number;
-  totalJobMins: number;
-  gapBefore?: number | null;
-  gapAfter?: number | null;
+  drive_distance_miles: number;
+  drive_time_mins: number;
+  mileage_cost: number;
+  net_earnings: number;
+  effective_hourly: number;
+  total_job_mins: number;
+  can_make_it: boolean;
+  scanback_conflict: boolean;
+  scanback_conflict_detail?: string;
+  gap_before?: number | null;
+  gap_after?: number | null;
+  prev_job?: {
+    type: SigningType;
+    time: Date;
+    duration: number;
+  } | null;
+  next_job?: {
+    type: SigningType;
+    time: Date;
+  } | null;
 }
-
-/** Signing types requiring a scanback step */
-const SCANBACK_TYPES = new Set<SigningType>([
-  SigningType.LOAN_REFI,
-  SigningType.HYBRID,
-  SigningType.PURCHASE_CLOSING,
-]);
 
 @Injectable()
 export class CittService {
@@ -56,18 +62,28 @@ export class CittService {
   ) {}
 
   async runCheck(userId: string, dto: CittCheckDto): Promise<CittResult> {
-    // Build a cache key for the full request
-    const cacheKey = `citt:${userId}:${Buffer.from(JSON.stringify(dto)).toString('base64').slice(0, 32)}`;
+    // Build a stable cache key by sorting keys
+    const stableDto = Object.fromEntries(
+      Object.entries(dto).sort(([a], [b]) => a.localeCompare(b)),
+    );
+
+    const cacheFingerprint = crypto
+      .createHash('md5')
+      .update(JSON.stringify(stableDto))
+      .digest('hex');
+
+    const cacheKey = `citt:${userId}:${cacheFingerprint}`;
+
     const cached = await this.redis.get(cacheKey);
     if (cached) {
-      this.logger.debug('[CITT] Cache hit');
+      this.logger.debug(`[CITT] Cache hit: ${cacheKey}`);
       return JSON.parse(cached) as CittResult;
     }
 
     // Fetch user settings
     const settings = await this.userSettings.get(userId);
     const irsRate = Number(settings.irs_rate_per_mile);
-    const minAcceptableNet = Number(settings.min_acceptable_net);
+    const minAcceptableNet = Number(settings.min_acceptable_net) || RISKY_NET;
 
     // Geocode the proposed job address
     const jobGeo = await this.geocoding.geocode(dto.address);
@@ -195,6 +211,9 @@ export class CittService {
         irsRate,
         gapBefore,
         gapAfter,
+        true,
+        prevJob,
+        nextJob,
       );
       await this.cacheResult(cacheKey, result);
       return result;
@@ -208,6 +227,9 @@ export class CittService {
         irsRate,
         gapBefore,
         gapAfter,
+        true,
+        prevJob,
+        nextJob,
       );
       await this.cacheResult(cacheKey, result);
       return result;
@@ -232,9 +254,9 @@ export class CittService {
     let verdict: CittVerdict;
     let reason: string;
 
-    if (prof.netEarnings < RISKY_NET) {
+    if (prof.netEarnings < minAcceptableNet) {
       verdict = 'DECLINE';
-      reason = `Net earnings of $${prof.netEarnings.toFixed(2)} fall below the minimum threshold.`;
+      reason = `Net earnings of $${prof.netEarnings.toFixed(2)} fall below your $${minAcceptableNet} threshold.`;
     } else if (prof.netEarnings < TAKE_IT_NET || isRiskyGap) {
       verdict = 'RISKY';
       reason = isRiskyGap
@@ -248,14 +270,29 @@ export class CittService {
     const result: CittResult = {
       verdict,
       reason,
-      distanceMiles,
-      driveTimeMins,
-      mileageCost: prof.mileageCost,
-      netEarnings: prof.netEarnings,
-      effectiveHourly: prof.effectiveHourly,
-      totalJobMins: prof.totalJobMins,
-      gapBefore,
-      gapAfter,
+      drive_distance_miles: distanceMiles,
+      drive_time_mins: driveTimeMins,
+      mileage_cost: prof.mileageCost,
+      net_earnings: prof.netEarnings,
+      effective_hourly: prof.effectiveHourly,
+      total_job_mins: prof.totalJobMins,
+      can_make_it: true,
+      scanback_conflict: false,
+      gap_before: gapBefore,
+      gap_after: gapAfter,
+      prev_job: prevJob
+        ? {
+            type: prevJob.signing_type,
+            time: prevJob.appointment_time,
+            duration: prevJob.signing_duration_mins,
+          }
+        : null,
+      next_job: nextJob
+        ? {
+            type: nextJob.signing_type,
+            time: nextJob.appointment_time,
+          }
+        : null,
     };
 
     await this.cacheResult(cacheKey, result);
@@ -303,7 +340,6 @@ export class CittService {
           timeout: 10_000,
         },
       );
-
       const summary = (
         response.data as {
           routes?: Array<{
@@ -321,10 +357,15 @@ export class CittService {
 
       await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
       return result;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`[CITT] ORS error: ${msg}`);
-      return null;
+    } catch (error) {
+      this.logger.error(
+        `[CITT] ORS error: ${error.message}${error.response ? ` (Status: ${error.response.status})` : ''}`,
+      );
+      // Return a safe fallback instead of crashing
+      return {
+        distanceMiles: 0,
+        driveTimeMins: 0,
+      };
     }
   }
 
@@ -332,28 +373,53 @@ export class CittService {
 
   private decline(
     reason: string,
-    distanceMiles: number,
-    driveTimeMins: number,
+    drive_distance_miles: number,
+    drive_time_mins: number,
     fee: number,
     irsRate: number,
     gapBefore: number | null = null,
     gapAfter: number | null = null,
+    isScheduleConflict = false,
+    prevJob?: {
+      signing_type: SigningType;
+      appointment_time: Date;
+      signing_duration_mins: number;
+    } | null,
+    nextJob?: {
+      signing_type: SigningType;
+      appointment_time: Date;
+    } | null,
   ): CittResult {
     return {
       verdict: 'DECLINE',
       reason,
-      distanceMiles,
-      driveTimeMins,
-      mileageCost: 0,
-      netEarnings: 0,
-      effectiveHourly: 0,
-      totalJobMins: 0,
-      gapBefore,
-      gapAfter,
+      drive_distance_miles,
+      drive_time_mins,
+      mileage_cost: drive_distance_miles * 2 * irsRate,
+      net_earnings: fee - drive_distance_miles * 2 * irsRate,
+      effective_hourly: 0,
+      total_job_mins: 0,
+      gap_before: gapBefore,
+      gap_after: gapAfter,
+      can_make_it: !isScheduleConflict,
+      scanback_conflict: false,
+      prev_job: prevJob
+        ? {
+            type: prevJob.signing_type,
+            time: prevJob.appointment_time,
+            duration: prevJob.signing_duration_mins,
+          }
+        : null,
+      next_job: nextJob
+        ? {
+            type: nextJob.signing_type,
+            time: nextJob.appointment_time,
+          }
+        : null,
     };
   }
 
-  private async cacheResult(key: string, result: CittResult): Promise<void> {
+  private async cacheResult(key: string, result: any): Promise<void> {
     await this.redis.set(key, JSON.stringify(result), CITT_CACHE_TTL);
   }
 

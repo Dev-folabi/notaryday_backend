@@ -132,13 +132,13 @@ export class GeocodingService {
         {
           params: { q: query, format: 'json', limit: 1 },
           headers: {
-            'User-Agent': `NotaryDay/1.0 (${appUrl})`,
+            'User-Agent': `NotaryDay/1.0 (contact: info@notaryday.app; ${appUrl})`,
+            'Accept-Language': 'en-US,en;q=0.9',
             Accept: 'application/json',
           },
-          timeout: 10_000,
+          timeout: 8000,
         },
       );
-
       const results = response.data as { lat: string; lon: string }[];
 
       if (!results.length) {
