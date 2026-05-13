@@ -133,13 +133,13 @@ export class CittService {
     let originLng: number;
 
     const prevJob = anchoredJobs
-      .filter((j) => new Date(j.appointment_time) < appointmentTime)
+      .filter((j) => new Date(j.appointment_time) <= appointmentTime)
       .sort(
         (a, b) => +new Date(b.appointment_time) - +new Date(a.appointment_time),
       )[0];
 
     const nextJob = anchoredJobs
-      .filter((j) => new Date(j.appointment_time) >= jobEndsAt)
+      .filter((j) => new Date(j.appointment_time) > appointmentTime)
       .sort(
         (a, b) => +new Date(a.appointment_time) - +new Date(b.appointment_time),
       )[0];

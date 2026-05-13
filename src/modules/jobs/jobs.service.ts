@@ -10,7 +10,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { calculateProfitability } from '../../common/utils/profitability.util';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
-import { JobStatus, SigningType } from '../../../generated/prisma';
+import { JobStatus, SigningType, JobSource } from '../../../generated/prisma';
 
 // Signing types that mandate scanback
 const SCANBACK_TYPES = new Set<SigningType>([
@@ -101,6 +101,11 @@ export class JobsService {
         platform_name: dto.platform_name,
         signer_count: dto.signer_count ?? 1,
         notes: dto.notes,
+        status:
+          dto.source === JobSource.MANUAL
+            ? JobStatus.CONFIRMED
+            : JobStatus.PENDING,
+        confirmed_at: dto.source === JobSource.MANUAL ? new Date() : null,
       },
     });
   }

@@ -150,9 +150,10 @@ export class GeocodingService {
         lat: parseFloat(results[0].lat),
         lng: parseFloat(results[0].lon),
       };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`[Geocode] Nominatim error: ${msg}`);
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || String(err);
+      const status = err.response?.status;
+      this.logger.error(`[Geocode] Nominatim error: ${msg}${status ? ` (Status: ${status})` : ''}`);
       return null;
     }
   }
