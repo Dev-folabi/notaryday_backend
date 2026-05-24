@@ -153,7 +153,9 @@ export class GeocodingService {
     } catch (err: any) {
       const msg = err.response?.data?.error || err.message || String(err);
       const status = err.response?.status;
-      this.logger.error(`[Geocode] Nominatim error: ${msg}${status ? ` (Status: ${status})` : ''}`);
+      this.logger.error(
+        `[Geocode] Nominatim error: ${msg}${status ? ` (Status: ${status})` : ''}`,
+      );
       return null;
     }
   }
