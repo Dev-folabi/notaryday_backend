@@ -358,9 +358,13 @@ export class CittService {
       await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
       return result;
     } catch (error) {
-      this.logger.error(
-        `[CITT] ORS error: ${error.message}${error.response ? ` (Status: ${error.response.status})` : ''}`,
-      );
+      let errorMessage = 'Unknown error';
+      if (axios.isAxiosError(error)) {
+        errorMessage = `${error.message}${error.response ? ` (Status: ${error.response.status})` : ''}`;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      this.logger.error(`[CITT] ORS error: ${errorMessage}`);
       // Return a safe fallback instead of crashing
       return {
         distanceMiles: 0,

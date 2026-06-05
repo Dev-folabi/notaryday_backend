@@ -53,19 +53,3 @@ export class PlanGuard implements CanActivate {
     throw new ForbiddenException('Pro subscription required');
   }
 }
-
-// Decorator for marking routes as Pro-only
-export const RequiresPro = () => {
-  return (target: object, propertyKey?: string | symbol) => {
-    if (propertyKey) {
-      Reflect.defineMetadata(
-        REQUIRED_PLAN_KEY,
-        [PlanTier.PRO],
-        target,
-        propertyKey,
-      );
-    } else {
-      Reflect.defineMetadata(REQUIRED_PLAN_KEY, [PlanTier.PRO], target);
-    }
-  };
-};

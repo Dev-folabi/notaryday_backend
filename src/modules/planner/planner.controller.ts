@@ -8,9 +8,10 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { PlanGuard, RequiresPro } from '../../common/guards/plan.guard';
+import { PlanGuard } from '../../common/guards/plan.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PlannerService } from './planner.service';
+import { RequiresPro } from '../../common/decorators/requires-pro.decorator';
 
 @ApiTags('Planner')
 @ApiBearerAuth()

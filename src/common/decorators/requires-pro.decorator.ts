@@ -1,4 +1,17 @@
-import { SetMetadata } from '@nestjs/common';
+import { REQUIRED_PLAN_KEY } from '../guards/plan.guard';
+import { PlanTier } from '../../../generated/prisma';
 
-export const REQUIRES_PRO_KEY = 'requiresPro';
-export const RequiresPro = () => SetMetadata(REQUIRES_PRO_KEY, true);
+export const RequiresPro = () => {
+  return (target: object, propertyKey?: string | symbol) => {
+    if (propertyKey) {
+      Reflect.defineMetadata(
+        REQUIRED_PLAN_KEY,
+        [PlanTier.PRO],
+        target,
+        propertyKey,
+      );
+    } else {
+      Reflect.defineMetadata(REQUIRED_PLAN_KEY, [PlanTier.PRO], target);
+    }
+  };
+};
