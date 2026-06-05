@@ -12,9 +12,9 @@ import { CittCheckDto } from './dto/citt-check.dto';
 import { JobStatus, SigningType } from '../../../generated/prisma';
 
 /** CITT verdict thresholds */
-const MIN_GAP_MINS = 10; // Gap below this = RISKY
-const TAKE_IT_NET = 20; // Net ≥ $20 = TAKE IT
-const RISKY_NET = 10; // Net $10–$19 = RISKY, below = DECLINE
+const MIN_GAP_MINS = 10;
+const TAKE_IT_NET = 20;
+const RISKY_NET = 10;
 
 /** ORS route cache TTL: 1 hour */
 const ORS_CACHE_TTL = 3600;

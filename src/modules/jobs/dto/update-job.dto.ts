@@ -46,6 +46,12 @@ export class UpdateJobDto {
   @Type(() => Number)
   signing_duration_mins?: number;
 
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  scanback_duration_mins?: number;
+
   @IsString()
   @IsOptional()
   client_name?: string;

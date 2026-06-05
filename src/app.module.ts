@@ -18,6 +18,8 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { CittModule } from './modules/citt/citt.module';
+import { OrsModule } from './common/services/ors.module';
+import { PlannerModule } from './modules/planner/planner.module';
 
 @Module({
   imports: [
@@ -72,6 +74,8 @@ import { CittModule } from './modules/citt/citt.module';
     GeocodingModule,
     JobsModule,
     CittModule,
+    OrsModule,
+    PlannerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

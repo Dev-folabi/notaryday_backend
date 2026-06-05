@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
+import { RedisService } from '../../config/redis.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { calculateProfitability } from '../../common/utils/profitability.util';
@@ -41,6 +42,7 @@ export class JobsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
     private readonly geocoding: GeocodingService,
     private readonly userSettings: UserSettingsService,
   ) {}
@@ -69,6 +71,16 @@ export class JobsService {
       appointmentTime.getTime() + signingDurationMins * 60_000,
     );
 
+    // Resolve scanback duration
+    const signingType = dto.signing_type ?? SigningType.GENERAL;
+    const scanbackDurationMins = dto.scanback_duration_mins ??
+      (SCANBACK_TYPES.has(signingType)
+        ? await this.getScanbackDuration(userId, signingType)
+        : 0);
+    const scanbackEndsAt = scanbackDurationMins > 0
+      ? new Date(signingEndsAt.getTime() + scanbackDurationMins * 60_000)
+      : null;
+
     // Profitability (no drive distance yet — calculated by CITT or route engine)
     const profitability = calculateProfitability({
       fee: dto.fee,
@@ -79,7 +91,7 @@ export class JobsService {
       driveTimeMins: 0,
     });
 
-    return this.prisma.job.create({
+    const job = await this.prisma.job.create({
       data: {
         user_id: userId,
         address: dto.address,
@@ -87,7 +99,9 @@ export class JobsService {
         lng: geoPoint?.lng,
         appointment_time: appointmentTime,
         signing_duration_mins: signingDurationMins,
+        scanback_duration_mins: scanbackDurationMins,
         signing_ends_at: signingEndsAt,
+        scanback_ends_at: scanbackEndsAt,
         signing_type: dto.signing_type ?? SigningType.GENERAL,
         source: dto.source,
         fee: dto.fee,
@@ -108,6 +122,8 @@ export class JobsService {
         confirmed_at: dto.source === JobSource.MANUAL ? new Date() : null,
       },
     });
+    await this.invalidateRouteCache(userId, appointmentTime);
+    return job;
   }
 
   // LIST
@@ -261,11 +277,13 @@ export class JobsService {
   // SOFT DELETE
 
   async remove(userId: string, jobId: string) {
-    await this.findOne(userId, jobId);
-    return this.prisma.job.update({
+    const job = await this.findOne(userId, jobId);
+    const result = await this.prisma.job.update({
       where: { id: jobId },
       data: { deleted_at: new Date() },
     });
+    await this.invalidateRouteCache(userId, job.appointment_time);
+    return result;
   }
 
   // Helpers
@@ -288,5 +306,10 @@ export class JobsService {
     const defaults = await this.userSettings.getSigningDefaults(userId);
     const match = defaults.find((d) => d.signing_type === signingType);
     return match?.scanback_duration_mins ?? 20;
+  }
+
+  private async invalidateRouteCache(userId: string, appointmentTime: Date) {
+    const date = appointmentTime.toISOString().slice(0, 10);
+    await this.redis.del(`route:${userId}:${date}`);
   }
 }

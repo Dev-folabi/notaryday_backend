@@ -242,9 +242,11 @@ model Job {
   // Scheduling — all times stored in UTC, displayed in user's local timezone
   appointment_time      DateTime @db.Timestamptz // Hard constraint — anchored
   signing_duration_mins Int // From type defaults or per-job override
+  scanback_duration_mins Int @default(0) // Per-job override or from type defaults
 
   // Derived time fields (computed + stored for performance)
-  signing_ends_at DateTime? @db.Timestamptz // appointment_time + signing_duration_mins
+  signing_ends_at  DateTime? @db.Timestamptz // appointment_time + signing_duration_mins
+  scanback_ends_at DateTime? @db.Timestamptz // signing_ends_at + scanback_duration_mins
 
   // Signing details
   signing_type SigningType @default(GENERAL)
