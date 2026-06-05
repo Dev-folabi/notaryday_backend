@@ -1,21 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { RedisService } from '../../config/redis.service';
-import {
-  OrsService,
-  OptimiseJob,
-  OptimisedLeg,
-} from '../../common/services/ors.service';
+import { OrsService, OptimiseJob } from '../../common/services/ors.service';
 import { UserSettingsService } from '../users/user-settings.service';
-import { calculateProfitability } from '../../common/utils/profitability.util';
+// import { calculateProfitability } from '../../common/utils/profitability.util';
 import { JobStatus, SigningType } from '../../../generated/prisma';
 
-const ROUTE_CACHE_TTL = 3600;
-const SCANBACK_TYPES = new Set<SigningType>([
-  SigningType.LOAN_REFI,
-  SigningType.HYBRID,
-  SigningType.PURCHASE_CLOSING,
-]);
+// const ROUTE_CACHE_TTL = 3600;
+// const SCANBACK_TYPES = new Set<SigningType>([
+//   SigningType.LOAN_REFI,
+//   SigningType.HYBRID,
+//   SigningType.PURCHASE_CLOSING,
+// ]);
 
 export interface PlannerJob {
   id: string;

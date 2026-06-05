@@ -150,9 +150,22 @@ export class GeocodingService {
         lat: parseFloat(results[0].lat),
         lng: parseFloat(results[0].lon),
       };
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || String(err);
-      const status = err.response?.status;
+    } catch (err) {
+      let msg = 'Unknown error';
+      let status: number | undefined;
+
+      if (axios.isAxiosError(err)) {
+        const responseData = err.response?.data as
+          | { error?: string }
+          | undefined;
+        msg = responseData?.error || err.message || String(err);
+        status = err.response?.status;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      } else {
+        msg = String(err);
+      }
+
       this.logger.error(
         `[Geocode] Nominatim error: ${msg}${status ? ` (Status: ${status})` : ''}`,
       );

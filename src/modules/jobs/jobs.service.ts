@@ -73,13 +73,15 @@ export class JobsService {
 
     // Resolve scanback duration
     const signingType = dto.signing_type ?? SigningType.GENERAL;
-    const scanbackDurationMins = dto.scanback_duration_mins ??
+    const scanbackDurationMins =
+      dto.scanback_duration_mins ??
       (SCANBACK_TYPES.has(signingType)
         ? await this.getScanbackDuration(userId, signingType)
         : 0);
-    const scanbackEndsAt = scanbackDurationMins > 0
-      ? new Date(signingEndsAt.getTime() + scanbackDurationMins * 60_000)
-      : null;
+    const scanbackEndsAt =
+      scanbackDurationMins > 0
+        ? new Date(signingEndsAt.getTime() + scanbackDurationMins * 60_000)
+        : null;
 
     // Profitability (no drive distance yet — calculated by CITT or route engine)
     const profitability = calculateProfitability({
@@ -268,10 +270,45 @@ export class JobsService {
     if (newStatus === JobStatus.COMPLETE) timestamps.completed_at = now;
     if (newStatus === JobStatus.CANCELLED) timestamps.cancelled_at = now;
 
-    return this.prisma.job.update({
+    const updated = await this.prisma.job.update({
       where: { id: jobId },
       data: { status: newStatus, ...timestamps },
     });
+
+    // Dispatch client ETA to next job when signing done
+    if (
+      (newStatus === JobStatus.SCANNING || newStatus === JobStatus.COMPLETE) &&
+      job.status === JobStatus.IN_PROGRESS
+    ) {
+      this.dispatchClientEta(userId, job).catch(() => {});
+    }
+
+    return updated;
+  }
+
+  private async dispatchClientEta(
+    userId: string,
+    completedJob: { appointment_time: Date },
+  ) {
+    // Find next confirmed job after this one
+    const nextJob = await this.prisma.job.findFirst({
+      where: {
+        user_id: userId,
+        deleted_at: null,
+        status: JobStatus.CONFIRMED,
+        appointment_time: { gt: completedJob.appointment_time },
+      },
+      orderBy: { appointment_time: 'asc' },
+    });
+    if (!nextJob?.client_email) return;
+
+    const driveMins = nextJob.drive_from_prev_mins ?? 20;
+    // Queue notification (uses QUEUE_NOTIFICATION which is registered in WorkersModule)
+    await this.redis.set(
+      `eta:${nextJob.id}`,
+      JSON.stringify({ userId, nextJobId: nextJob.id, etaMins: driveMins }),
+      300,
+    );
   }
 
   // SOFT DELETE
