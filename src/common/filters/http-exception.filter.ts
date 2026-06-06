@@ -61,7 +61,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           break;
         case 'P2002':
           status = HttpStatus.CONFLICT;
-          message = `Unique constraint failed on the fields: ${(prismaError.meta?.target as string[])?.join(', ') || 'unknown'}`;
+          message = 'A record with this value already exists.';
           code = 'DATABASE_CONFLICT';
           break;
         case 'P2003':

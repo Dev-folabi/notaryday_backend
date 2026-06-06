@@ -25,7 +25,7 @@ export class PrismaService
     const pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: {
-        rejectUnauthorized: false,
+        rejectUnauthorized: process.env.NODE_ENV === 'production',
       },
       max: 10,
       min: 2,

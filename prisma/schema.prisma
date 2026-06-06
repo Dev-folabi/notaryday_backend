@@ -133,6 +133,7 @@ model User {
   settings              UserSettings?
   signing_defaults      SigningTypeDefault[]
   jobs                  Job[]
+  day_plans             DayPlan[]
   bookings              Booking[]
   expenses              Expense[]
   journal_entries       JournalEntry[]
@@ -141,6 +142,7 @@ model User {
   calendar_connections  CalendarConnection[]
   notifications         Notification[]
   email_imports         EmailImport[]
+  email_templates       EmailTemplate[]
 
   @@map("users")
 }
@@ -183,7 +185,9 @@ model UserSettings {
   preferred_nav_app NavApp @default(GOOGLE_MAPS)
 
   // Calendar sync
-  ics_feed_token String @unique @default(cuid()) // Secret token for .ics URL
+  ics_feed_token             String  @unique @default(cuid()) // Secret token for .ics URL
+  google_calendar_connected  Boolean @default(false)
+  google_calendar_token      Json?   // OAuth tokens { access_token, refresh_token, expiry }
 
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
@@ -213,6 +217,7 @@ model SigningTypeDefault {
 model DayPlan {
   id      String @id @default(cuid())
   user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   jobs Job[]
 
@@ -224,6 +229,7 @@ model DayPlan {
   updated_at DateTime @updatedAt @db.Timestamptz
 
   @@unique([user_id, date])
+  @@index([user_id])
   @@map("day_plans")
 }
 
@@ -234,7 +240,7 @@ model Job {
   user_id String
   user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  // Location
+  // LocationemailImport
   address String
   lat     Decimal? @db.Decimal(10, 7) // Geocoded via Nominatim, cached
   lng     Decimal? @db.Decimal(10, 7)
@@ -542,6 +548,27 @@ model LemonSqueezyEvent {
 
   @@index([event_name, processed])
   @@map("lemonsqueezy_events")
+}
+
+// EMAIL TEMPLATES (custom per-user templates for client communications)
+
+model EmailTemplate {
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  name     String // e.g. "Appointment Reminder", "Invoice", "Booking Confirmation"
+  type     String // appointment_reminder | invoice | booking_confirmation | booking_declined | client_eta
+  subject  String // Email subject with {{variables}}
+  body     String @db.Text // HTML body with {{variables}}
+  is_active Boolean @default(true)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  @@unique([user_id, type])
+  @@index([user_id])
+  @@map("email_templates")
 }
 
 // NOTIFICATIONS

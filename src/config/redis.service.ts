@@ -14,8 +14,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       throw new Error('UPSTASH_REDIS_URL is not configured');
     }
 
+    const isProduction =
+      this.configService.get<string>('NODE_ENV') === 'production';
+
     this.client = new Redis(url, {
-      tls: { rejectUnauthorized: false },
+      tls: { rejectUnauthorized: isProduction },
       lazyConnect: true,
     });
 

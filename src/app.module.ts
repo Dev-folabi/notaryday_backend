@@ -20,6 +20,16 @@ import { JobsModule } from './modules/jobs/jobs.module';
 import { CittModule } from './modules/citt/citt.module';
 import { OrsModule } from './common/services/ors.module';
 import { PlannerModule } from './modules/planner/planner.module';
+import { BookingModule } from './modules/booking/booking.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
+import { EmailImportModule } from './modules/email-import/email-import.module';
+import { ScreenshotImportModule } from './modules/screenshot-import/screenshot-import.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { JournalModule } from './modules/journal/journal.module';
+import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
+import { WorkersModule } from './workers/workers.module';
 
 @Module({
   imports: [
@@ -54,7 +64,10 @@ import { PlannerModule } from './modules/planner/planner.module';
           },
           redis: {
             url,
-            tls: { rejectUnauthorized: false },
+            tls: {
+              rejectUnauthorized:
+                config.get<string>('NODE_ENV') === 'production',
+            },
           },
         };
       },
@@ -76,6 +89,16 @@ import { PlannerModule } from './modules/planner/planner.module';
     CittModule,
     OrsModule,
     PlannerModule,
+    BookingModule,
+    CalendarModule,
+    EmailImportModule,
+    ScreenshotImportModule,
+    ExpensesModule,
+    InvoicesModule,
+    ReportsModule,
+    JournalModule,
+    EmailTemplatesModule,
+    WorkersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
