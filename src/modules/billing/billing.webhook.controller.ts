@@ -9,8 +9,10 @@ import {
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
 import { BillingService, LemonSqueezyPayload } from './billing.service';
 
+@ApiTags('Billing')
 @Controller('billing/webhook')
 export class BillingWebhookController {
   private readonly logger = new Logger(BillingWebhookController.name);
@@ -19,14 +21,21 @@ export class BillingWebhookController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'LemonSqueezy webhook endpoint (server-to-server)' })
+  @ApiHeader({
+    name: 'x-signature',
+    description: 'HMAC signature for payload verification',
+    required: true,
+  })
+  @ApiResponse({ status: 200, description: 'Webhook processed' })
+  @ApiResponse({ status: 401, description: 'Invalid signature' })
+  @ApiResponse({ status: 400, description: 'Invalid JSON payload' })
   async handleWebhook(
     @Headers('x-signature') signature: string,
     @Body() rawBody: Buffer,
   ) {
-    // rawBody is expected to be a Buffer (requires raw-body middleware/NestJS config)
     const payload = rawBody.toString('utf8');
 
-    // Verify webhook signature
     if (
       !signature ||
       !this.billingService.verifyWebhookSignature(payload, signature)
@@ -52,7 +61,6 @@ export class BillingWebhookController {
       return { received: true };
     }
 
-    // Atomic idempotency check and creation
     try {
       await this.billingService.processIdempotency(
         eventId,
@@ -64,14 +72,12 @@ export class BillingWebhookController {
       return { received: true };
     }
 
-    // Process the webhook
     try {
       const result = await this.billingService.processWebhook(
         eventName,
         parsedPayload,
       );
 
-      // Update event status
       await this.billingService.updateEvent(eventId, result.processed);
 
       return { received: true, processed: result.processed };
