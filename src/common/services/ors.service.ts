@@ -53,7 +53,13 @@ export class OrsService {
     try {
       const res = await axios.post(
         `${this.baseUrl}/directions/driving-car/json`,
-        { coordinates: [[fromLng, fromLat], [toLng, toLat]], units: 'mi' },
+        {
+          coordinates: [
+            [fromLng, fromLat],
+            [toLng, toLat],
+          ],
+          units: 'mi',
+        },
         {
           headers: {
             Authorization: this.apiKey,
@@ -92,23 +98,32 @@ export class OrsService {
   ): Promise<OptimisedLeg[]> {
     if (jobs.length === 0) return [];
     if (jobs.length === 1) {
-      const route = await this.getRoute(startLat, startLng, jobs[0].lat, jobs[0].lng);
-      return [{
-        jobId: jobs[0].id,
-        sequence: 1,
-        driveFromPrevMins: route?.driveTimeMins ?? 0,
-        driveFromPrevMiles: route?.distanceMiles ?? 0,
-      }];
+      const route = await this.getRoute(
+        startLat,
+        startLng,
+        jobs[0].lat,
+        jobs[0].lng,
+      );
+      return [
+        {
+          jobId: jobs[0].id,
+          sequence: 1,
+          driveFromPrevMins: route?.driveTimeMins ?? 0,
+          driveFromPrevMiles: route?.distanceMiles ?? 0,
+        },
+      ];
     }
 
     try {
       // Build ORS optimization request
-      const vehicles = [{
-        id: 1,
-        profile: 'driving-car',
-        start: [startLng, startLat],
-        end: [startLng, startLat],
-      }];
+      const vehicles = [
+        {
+          id: 1,
+          profile: 'driving-car',
+          start: [startLng, startLat],
+          end: [startLng, startLat],
+        },
+      ];
 
       const orsJobs = jobs.map((j, i) => {
         const job: any = {
@@ -153,13 +168,23 @@ export class OrsService {
         let driveMins = 0;
         let driveMiles = 0;
         if (i === 0) {
-          const route = await this.getRoute(startLat, startLng, job.lat, job.lng);
+          const route = await this.getRoute(
+            startLat,
+            startLng,
+            job.lat,
+            job.lng,
+          );
           driveMins = route?.driveTimeMins ?? 0;
           driveMiles = route?.distanceMiles ?? 0;
         } else {
           const prevJob = jobs[jobSteps[i - 1].id - 1];
           if (prevJob) {
-            const route = await this.getRoute(prevJob.lat, prevJob.lng, job.lat, job.lng);
+            const route = await this.getRoute(
+              prevJob.lat,
+              prevJob.lng,
+              job.lat,
+              job.lng,
+            );
             driveMins = route?.driveTimeMins ?? 0;
             driveMiles = route?.distanceMiles ?? 0;
           }
@@ -175,7 +200,9 @@ export class OrsService {
 
       return result;
     } catch (error: any) {
-      this.logger.warn(`ORS optimise failed, falling back to time-order: ${error.message}`);
+      this.logger.warn(
+        `ORS optimise failed, falling back to time-order: ${error.message}`,
+      );
       return this.fallbackTimeOrder(startLat, startLng, jobs);
     }
   }

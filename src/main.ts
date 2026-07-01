@@ -1,7 +1,6 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ThrottlerGuard } from '@nestjs/throttler';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import Redis from 'ioredis';
 import helmet from 'helmet';
@@ -87,8 +86,7 @@ async function bootstrap() {
   const reflector = app.get(Reflector);
   const authService = app.get(AuthService);
   const authGuard = new AuthGuard(reflector, authService);
-  const throttlerGuard = app.get(ThrottlerGuard);
-  app.useGlobalGuards(throttlerGuard, authGuard);
+  app.useGlobalGuards(authGuard);
 
   // Swagger / OpenAPI — disabled in production
   if (!isProduction) {

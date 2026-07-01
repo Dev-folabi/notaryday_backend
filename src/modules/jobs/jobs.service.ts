@@ -12,6 +12,9 @@ import { calculateProfitability } from '../../common/utils/profitability.util';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { JobStatus, SigningType, JobSource } from '../../../generated/prisma';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+import { QUEUE_CALENDAR_SYNC } from '../../queues/queue.constants';
 
 // Signing types that mandate scanback
 const SCANBACK_TYPES = new Set<SigningType>([
@@ -45,6 +48,8 @@ export class JobsService {
     private readonly redis: RedisService,
     private readonly geocoding: GeocodingService,
     private readonly userSettings: UserSettingsService,
+    @InjectQueue(QUEUE_CALENDAR_SYNC)
+    private readonly calendarSyncQueue: Queue,
   ) {}
 
   // CREATE
@@ -125,6 +130,11 @@ export class JobsService {
       },
     });
     await this.invalidateRouteCache(userId, appointmentTime);
+
+    if (job.status === JobStatus.CONFIRMED) {
+      await this.calendarSyncQueue.add('sync-job', { userId, jobId: job.id });
+    }
+
     return job;
   }
 
@@ -281,6 +291,13 @@ export class JobsService {
       job.status === JobStatus.IN_PROGRESS
     ) {
       this.dispatchClientEta(userId, job).catch(() => {});
+    }
+
+    if (
+      newStatus === JobStatus.CONFIRMED &&
+      job.status !== JobStatus.CONFIRMED
+    ) {
+      await this.calendarSyncQueue.add('sync-job', { userId, jobId: job.id });
     }
 
     return updated;
