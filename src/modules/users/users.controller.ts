@@ -119,6 +119,26 @@ class UpdateSettingsDto {
   @IsNumber()
   bookingBufferMins?: number;
 
+  @ApiPropertyOptional({ example: [] })
+  @IsOptional()
+  booking_page_services?: Record<string, unknown>[];
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: 'Minimum notice hours required for a booking',
+  })
+  @IsOptional()
+  @IsNumber()
+  booking_min_notice_hours?: number;
+
+  @ApiPropertyOptional({
+    example: 30,
+    description: 'Maximum days in advance a booking can be made',
+  })
+  @IsOptional()
+  @IsNumber()
+  booking_advance_limit_days?: number;
+
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
@@ -253,6 +273,9 @@ export class UsersController {
       bookingPageBio: dto.bookingPageBio,
       serviceAreaMiles: dto.serviceAreaMiles,
       bookingBufferMins: dto.bookingBufferMins,
+      bookingPageServices: dto.booking_page_services,
+      bookingMinNoticeHours: dto.booking_min_notice_hours,
+      bookingAdvanceLimitDays: dto.booking_advance_limit_days,
       remindersEnabled: dto.remindersEnabled,
       reminderLeadMins: dto.reminderLeadMins,
       clientEtaEnabled: dto.clientEtaEnabled,

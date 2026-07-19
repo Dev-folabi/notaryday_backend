@@ -40,6 +40,20 @@ export class InvoicesController {
     return { success: true, data: await this.invoices.generate(userId, jobId) };
   }
 
+  @Post('jobs/:jobId/invoice')
+  @ApiOperation({
+    summary: 'Generate an invoice for a completed job (spec route)',
+  })
+  @ApiParam({ name: 'jobId', description: 'Job UUID to generate invoice for' })
+  @ApiResponse({ status: 201, description: 'Invoice generated' })
+  @ApiResponse({ status: 404, description: 'Job not found' })
+  async generateForJob(
+    @CurrentUser('id') userId: string,
+    @Param('jobId') jobId: string,
+  ) {
+    return { success: true, data: await this.invoices.generate(userId, jobId) };
+  }
+
   @Get()
   @ApiOperation({ summary: 'List all invoices' })
   @ApiQuery({

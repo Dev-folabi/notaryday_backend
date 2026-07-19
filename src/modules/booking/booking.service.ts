@@ -7,6 +7,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { OrsService } from '../../common/services/ors.service';
 import { UserSettingsService } from '../users/user-settings.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateBookingDto, DeclineBookingDto } from './dto/booking.dto';
 import {
   BookingStatus,
@@ -30,6 +31,7 @@ export class BookingService {
     private readonly geocoding: GeocodingService,
     private readonly ors: OrsService,
     private readonly userSettings: UserSettingsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Public: create a booking request */
@@ -70,7 +72,7 @@ export class BookingService {
     const service = services.find((s) => s.signing_type === dto.service_type);
     const baseFee = service?.base_fee ?? 75;
 
-    return this.prisma.booking.create({
+    const booking = await this.prisma.booking.create({
       data: {
         notary_id: notary.id,
         client_name: dto.client_name,
@@ -88,6 +90,20 @@ export class BookingService {
         status: BookingStatus.PENDING_REVIEW,
       },
     });
+
+    // Notify the notary of the new booking request (in-app)
+    await this.notifications
+      .createNotification({
+        userId: notary.id,
+        type: 'BOOKING_RECEIVED',
+        title: 'New booking request',
+        body: `${dto.client_name} requested a ${dto.service_type.replace('_', ' ')} signing on ${new Date(booking.requested_time).toLocaleDateString()}.`,
+        bookingId: booking.id,
+        actionUrl: '/bookings',
+      })
+      .catch(() => {});
+
+    return booking;
   }
 
   /** Auth'd: list bookings for notary */
@@ -179,6 +195,41 @@ export class BookingService {
       },
     });
 
+    // Email the client confirmation
+    if (booking.client_email) {
+      const notary = await this.prisma.user.findUnique({
+        where: { id: notaryId },
+      });
+      await this.notifications
+        .sendEmail({
+          to: booking.client_email,
+          subject: 'Your signing appointment is confirmed',
+          html: `
+            <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto">
+              <h2 style="color:#0F2C4E">Appointment Confirmed</h2>
+              <p>Hi ${booking.client_name},</p>
+              <p>Your ${booking.service_type.replace('_', ' ')} signing with ${notary?.full_name ?? notary?.username ?? 'your notary'} is confirmed.</p>
+              <p><strong>Date:</strong> ${booking.requested_time.toLocaleString()}</p>
+              <p><strong>Location:</strong> ${booking.address}</p>
+            </div>
+          `,
+        })
+        .catch(() => {});
+    }
+
+    // Notify the notary that the booking was approved
+    await this.notifications
+      .createNotification({
+        userId: notaryId,
+        type: 'BOOKING_CONFIRMED',
+        title: 'Booking confirmed',
+        body: `${booking.client_name}'s ${booking.service_type.replace('_', ' ')} signing was added to your schedule.`,
+        bookingId: booking.id,
+        jobId: job.id,
+        actionUrl: `/jobs/${job.id}`,
+      })
+      .catch(() => {});
+
     return { booking: { ...booking, status: BookingStatus.CONFIRMED }, job };
   }
 
@@ -198,6 +249,27 @@ export class BookingService {
         reviewed_at: new Date(),
       },
     });
+
+    // Email the client about the decline + alternatives
+    if (booking.client_email) {
+      const altTimes = (dto.alternative_times ?? [])
+        .map((t) => new Date(t).toLocaleString())
+        .join('<br>');
+      await this.notifications
+        .sendEmail({
+          to: booking.client_email,
+          subject: 'Update on your signing request',
+          html: `
+            <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto">
+              <h2 style="color:#0F2C4E">Booking Update</h2>
+              <p>Hi ${booking.client_name},</p>
+              <p>Unfortunately, ${booking.service_type.replace('_', ' ')} signing request for ${booking.requested_time.toLocaleString()} could not be accommodated${dto.reason ? `: ${dto.reason}` : '.'}</p>
+              ${altTimes ? `<p>Alternative times you may request:<br>${altTimes}</p>` : ''}
+            </div>
+          `,
+        })
+        .catch(() => {});
+    }
 
     return { ...booking, status: BookingStatus.DECLINED };
   }

@@ -7,14 +7,16 @@ import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { PrismaService } from '../../config/prisma.service';
 import { UserSettingsService } from '../users/user-settings.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { QUEUE_INVOICE } from '../../queues/queue.constants';
-import { JobStatus } from '../../../generated/prisma';
+import { JobStatus, Prisma } from '../../../generated/prisma';
 
 @Injectable()
 export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userSettings: UserSettingsService,
+    private readonly notifications: NotificationsService,
     @InjectQueue(QUEUE_INVOICE) private readonly invoiceQueue: Queue,
   ) {}
 
@@ -68,18 +70,46 @@ export class InvoicesService {
       userId,
     });
 
-    return invoice;
+    return this.prisma.invoice.findFirst({
+      where: { id: invoice.id },
+      include: {
+        job: {
+          select: {
+            address: true,
+            signing_type: true,
+            appointment_time: true,
+            fee: true,
+            platform_fee: true,
+            net_earnings: true,
+            mileage_cost: true,
+            client_name: true,
+          },
+        },
+      },
+    });
   }
 
   async findAll(userId: string, filters?: { is_paid?: boolean }) {
-    const where: any = { user_id: userId, deleted_at: null };
+    const where: Prisma.InvoiceWhereInput = {
+      user_id: userId,
+      deleted_at: null,
+    };
     if (filters?.is_paid !== undefined) where.is_paid = filters.is_paid;
     return this.prisma.invoice.findMany({
       where,
       orderBy: { created_at: 'desc' },
       include: {
         job: {
-          select: { address: true, signing_type: true, appointment_time: true },
+          select: {
+            address: true,
+            signing_type: true,
+            appointment_time: true,
+            fee: true,
+            platform_fee: true,
+            net_earnings: true,
+            mileage_cost: true,
+            client_name: true,
+          },
         },
       },
     });
@@ -98,7 +128,7 @@ export class InvoicesService {
     const invoice = await this.findOne(userId, id);
     if (invoice.is_paid) throw new BadRequestException('Invoice already paid');
 
-    return this.prisma.invoice.update({
+    const updated = await this.prisma.invoice.update({
       where: { id },
       data: {
         is_paid: true,
@@ -106,6 +136,19 @@ export class InvoicesService {
         payment_method_used: paymentMethod,
       },
     });
+
+    await this.notifications
+      .createNotification({
+        userId,
+        type: 'PAYMENT_RECEIVED',
+        title: 'Payment received',
+        body: `Invoice ${invoice.invoice_number} for $${Number(invoice.total).toFixed(2)} marked as paid${paymentMethod ? ` via ${paymentMethod}` : ''}.`,
+        jobId: invoice.job_id,
+        actionUrl: `/invoices`,
+      })
+      .catch(() => {});
+
+    return updated;
   }
 
   /** Queue email send for an existing invoice */

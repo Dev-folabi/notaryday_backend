@@ -72,6 +72,20 @@ export class ReportsService {
     const net = gross - mileageCost - platformFees;
     const effectiveHourly = totalHours > 0 ? net / totalHours : 0;
 
+    // Group by signing type
+    const byType: Record<
+      string,
+      { count: number; gross: number; net: number }
+    > = {};
+    for (const j of jobs) {
+      const key = j.signing_type;
+      if (!byType[key]) byType[key] = { count: 0, gross: 0, net: 0 };
+      byType[key].count += 1;
+      byType[key].gross += Number(j.fee);
+      byType[key].net +=
+        Number(j.fee) - Number(j.mileage_cost ?? 0) - Number(j.platform_fee);
+    }
+
     return {
       summary: {
         gross,
@@ -82,9 +96,15 @@ export class ReportsService {
         totalHours,
         effectiveHourly,
         jobCount: jobs.length,
+        signings: jobs.length,
       },
       periods: Object.entries(periods).map(([period, data]) => ({
         period,
+        ...data,
+      })),
+      byType: Object.entries(byType).map(([signing_type, data]) => ({
+        signing_type,
+        type: signing_type,
         ...data,
       })),
       topClients: Object.entries(clients)

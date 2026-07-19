@@ -165,4 +165,38 @@ export class NotificationsService {
       data: { is_read: true },
     });
   }
+
+  /**
+   * Create an in-app notification record for a user
+   */
+  async createNotification(data: {
+    userId: string;
+    type:
+      | 'BOOKING_RECEIVED'
+      | 'BOOKING_CONFIRMED'
+      | 'BOOKING_DECLINED'
+      | 'JOB_REMINDER'
+      | 'CLIENT_ETA'
+      | 'INVOICE_SENT'
+      | 'PAYMENT_RECEIVED'
+      | 'PLAN_UPGRADED'
+      | 'PLAN_CANCELLED';
+    title: string;
+    body: string;
+    jobId?: string;
+    bookingId?: string;
+    actionUrl?: string;
+  }) {
+    return this.prisma.notification.create({
+      data: {
+        user_id: data.userId,
+        type: data.type,
+        title: data.title,
+        body: data.body,
+        job_id: data.jobId,
+        booking_id: data.bookingId,
+        action_url: data.actionUrl,
+      },
+    });
+  }
 }

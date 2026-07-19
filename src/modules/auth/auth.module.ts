@@ -5,7 +5,6 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
-import { NotificationsModule } from '../notifications/notifications.module';
 
 @Global()
 @Module({
@@ -21,7 +20,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
       }),
     }),
     forwardRef(() => UsersModule),
-    forwardRef(() => NotificationsModule),
   ],
   providers: [AuthService],
   controllers: [AuthController],

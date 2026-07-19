@@ -3,6 +3,7 @@ import {
   Post,
   Body,
   Get,
+  Patch,
   UseGuards,
   Request,
 } from '@nestjs/common';
@@ -59,18 +60,42 @@ export class NotificationsController {
     );
   }
 
-  @Get('list')
+  @Get()
   @ApiOperation({ summary: 'Get all notifications for the current user' })
   @ApiResponse({ status: 200, description: 'Array of notifications' })
   async getNotifications(@Request() req: RequestWithUser) {
     return await this.notificationsService.getNotifications(req.user.id);
   }
 
-  @Post(':id/read')
+  @Get('list')
+  @ApiOperation({
+    summary: 'Get all notifications for the current user (alias)',
+  })
+  @ApiResponse({ status: 200, description: 'Array of notifications' })
+  async getNotificationsAlias(@Request() req: RequestWithUser) {
+    return await this.notificationsService.getNotifications(req.user.id);
+  }
+
+  @Patch(':id/read')
   @ApiOperation({ summary: 'Mark a notification as read' })
   @ApiParam({ name: 'id', description: 'Notification UUID' })
   @ApiResponse({ status: 200, description: 'Notification marked as read' })
   async markAsRead(@Request() req: RequestWithUser) {
+    const notificationId = req.params.id;
+    if (!notificationId) {
+      throw new Error('Notification ID is required');
+    }
+    return await this.notificationsService.markAsRead(
+      notificationId,
+      req.user.id,
+    );
+  }
+
+  @Post(':id/read')
+  @ApiOperation({ summary: 'Mark a notification as read (alias)' })
+  @ApiParam({ name: 'id', description: 'Notification UUID' })
+  @ApiResponse({ status: 200, description: 'Notification marked as read' })
+  async markAsReadAlias(@Request() req: RequestWithUser) {
     const notificationId = req.params.id;
     if (!notificationId) {
       throw new Error('Notification ID is required');

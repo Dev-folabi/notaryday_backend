@@ -170,6 +170,8 @@ model UserSettings {
   booking_buffer_mins       Int     @default(15) // Minimum gap before accepting booking
   booking_page_active_hours Json? // { mon: { start: "09:00", end: "18:00" }, ... }
   booking_page_services     Json? // Array of { name, duration_mins, scanback_mins, base_fee, description } Pro only
+  booking_min_notice_hours   Int     @default(0) // Min hours notice required for a booking
+  booking_advance_limit_days Int     @default(30) // Max days in advance a booking can be made
 
   // Invoicing
   payment_info     Json? // { zelle, venmo, paypal, bank_name, other }

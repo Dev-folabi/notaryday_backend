@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { EmailTemplate } from '../../../generated/prisma';
 import { PrismaService } from '../../config/prisma.service';
-import { CreateEmailTemplateDto, UpdateEmailTemplateDto } from './dto/email-template.dto';
+import {
+  CreateEmailTemplateDto,
+  UpdateEmailTemplateDto,
+} from './dto/email-template.dto';
 
 const DEFAULT_TEMPLATES = [
   {
@@ -41,7 +45,9 @@ export class EmailTemplatesService {
 
   /** Get all templates for a user (creates defaults if none exist) */
   async findAll(userId: string) {
-    let templates = await this.prisma.emailTemplate.findMany({ where: { user_id: userId } });
+    let templates = await this.prisma.emailTemplate.findMany({
+      where: { user_id: userId },
+    });
     if (templates.length === 0) {
       templates = await this.seedDefaults(userId);
     }
@@ -49,20 +55,28 @@ export class EmailTemplatesService {
   }
 
   async findByType(userId: string, type: string) {
-    let template = await this.prisma.emailTemplate.findUnique({ where: { user_id_type: { user_id: userId, type } } });
+    let template = await this.prisma.emailTemplate.findUnique({
+      where: { user_id_type: { user_id: userId, type } },
+    });
     if (!template) {
       await this.seedDefaults(userId);
-      template = await this.prisma.emailTemplate.findUnique({ where: { user_id_type: { user_id: userId, type } } });
+      template = await this.prisma.emailTemplate.findUnique({
+        where: { user_id_type: { user_id: userId, type } },
+      });
     }
     return template;
   }
 
   async create(userId: string, dto: CreateEmailTemplateDto) {
-    return this.prisma.emailTemplate.create({ data: { user_id: userId, ...dto } });
+    return this.prisma.emailTemplate.create({
+      data: { user_id: userId, ...dto },
+    });
   }
 
   async update(userId: string, id: string, dto: UpdateEmailTemplateDto) {
-    const template = await this.prisma.emailTemplate.findFirst({ where: { id, user_id: userId } });
+    const template = await this.prisma.emailTemplate.findFirst({
+      where: { id, user_id: userId },
+    });
     if (!template) throw new NotFoundException('Template not found');
     return this.prisma.emailTemplate.update({ where: { id }, data: dto });
   }
@@ -78,7 +92,10 @@ export class EmailTemplatesService {
   }
 
   /** Render a template with variables */
-  render(template: { subject: string; body: string }, vars: Record<string, string>): { subject: string; body: string } {
+  render(
+    template: { subject: string; body: string },
+    vars: Record<string, string>,
+  ): { subject: string; body: string } {
     let subject = template.subject;
     let body = template.body;
     for (const [key, value] of Object.entries(vars)) {
@@ -89,8 +106,8 @@ export class EmailTemplatesService {
     return { subject, body };
   }
 
-  private async seedDefaults(userId: string) {
-    const templates: any[] = [];
+  private async seedDefaults(userId: string): Promise<EmailTemplate[]> {
+    const templates: EmailTemplate[] = [];
     for (const def of DEFAULT_TEMPLATES) {
       const t = await this.prisma.emailTemplate.upsert({
         where: { user_id_type: { user_id: userId, type: def.type } },

@@ -34,7 +34,9 @@ export class UserSettingsService {
       serviceAreaMiles?: number;
       bookingBufferMins?: number;
       bookingPageActiveHours?: Prisma.InputJsonValue;
-      bookingPageServices?: Prisma.InputJsonValue;
+      bookingPageServices?: Prisma.InputJsonValue | Record<string, unknown>[];
+      bookingMinNoticeHours?: number;
+      bookingAdvanceLimitDays?: number;
       paymentInfo?: Prisma.InputJsonValue;
       invoiceNotes?: string;
       invoiceDueDays?: number;
@@ -58,6 +60,8 @@ export class UserSettingsService {
       booking_buffer_mins?: number;
       booking_page_active_hours?: Prisma.InputJsonValue;
       booking_page_services?: Prisma.InputJsonValue;
+      booking_min_notice_hours?: number;
+      booking_advance_limit_days?: number;
       payment_info?: Prisma.InputJsonValue;
       invoice_notes?: string;
       invoice_due_days?: number;
@@ -90,7 +94,12 @@ export class UserSettingsService {
     if (data.bookingPageActiveHours !== undefined)
       updateData.booking_page_active_hours = data.bookingPageActiveHours;
     if (data.bookingPageServices !== undefined)
-      updateData.booking_page_services = data.bookingPageServices;
+      updateData.booking_page_services =
+        data.bookingPageServices as Prisma.InputJsonValue;
+    if (data.bookingMinNoticeHours !== undefined)
+      updateData.booking_min_notice_hours = data.bookingMinNoticeHours;
+    if (data.bookingAdvanceLimitDays !== undefined)
+      updateData.booking_advance_limit_days = data.bookingAdvanceLimitDays;
     if (data.paymentInfo !== undefined)
       updateData.payment_info = data.paymentInfo;
     if (data.invoiceNotes !== undefined)

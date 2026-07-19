@@ -30,17 +30,14 @@ export class TransformInterceptor<T> implements NestInterceptor<
   ): Observable<Response<T>> {
     return next.handle().pipe(
       map((data) => {
-        // Handle paginated responses
+        // Already-enveloped response (controllers return { success, data, meta })
         if (
           data &&
           typeof data === 'object' &&
-          'data' in data &&
-          'meta' in data
+          'success' in data &&
+          'data' in data
         ) {
-          return {
-            success: true,
-            ...data,
-          };
+          return data;
         }
 
         // Handle plain responses

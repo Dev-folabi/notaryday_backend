@@ -10,9 +10,21 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { SigningType, JobSource } from '../../../../generated/prisma';
+import {
+  SigningType,
+  JobSource,
+  JobStatus,
+} from '../../../../generated/prisma';
 
 export class UpdateJobDto {
+  @ApiPropertyOptional({
+    enum: JobStatus,
+    description: 'Optional status transition',
+  })
+  @IsEnum(JobStatus)
+  @IsOptional()
+  status?: JobStatus;
+
   @ApiPropertyOptional({ example: '456 Oak Ave, Austin, TX 78702' })
   @IsString()
   @IsOptional()

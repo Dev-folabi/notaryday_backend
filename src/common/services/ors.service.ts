@@ -5,6 +5,33 @@ import { RedisService } from '../../config/redis.service';
 
 const ORS_CACHE_TTL = 3600;
 
+interface OrsRouteResponse {
+  routes?: {
+    summary?: {
+      distance: number;
+      duration: number;
+    };
+  }[];
+}
+
+interface OrsOptimizationJob {
+  id: number;
+  location: [number, number];
+  service: number;
+  time_windows?: [number, number][];
+}
+
+interface OrsOptimizationStep {
+  type: string;
+  id: number;
+}
+
+interface OrsOptimizationResponse {
+  routes?: {
+    steps?: OrsOptimizationStep[];
+  }[];
+}
+
 export interface RouteResult {
   distanceMiles: number;
   driveTimeMins: number;
@@ -51,7 +78,7 @@ export class OrsService {
     if (cached) return JSON.parse(cached) as RouteResult;
 
     try {
-      const res = await axios.post(
+      const res = await axios.post<OrsRouteResponse>(
         `${this.baseUrl}/directions/driving-car/json`,
         {
           coordinates: [
@@ -70,7 +97,7 @@ export class OrsService {
         },
       );
 
-      const summary = (res.data as any).routes?.[0]?.summary;
+      const summary = res.data.routes?.[0]?.summary;
       if (!summary) return null;
 
       const result: RouteResult = {
@@ -80,8 +107,9 @@ export class OrsService {
 
       await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
       return result;
-    } catch (error: any) {
-      this.logger.error(`ORS route error: ${error.message}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`ORS route error: ${message}`);
       return null;
     }
   }
@@ -126,7 +154,7 @@ export class OrsService {
       ];
 
       const orsJobs = jobs.map((j, i) => {
-        const job: any = {
+        const job: OrsOptimizationJob = {
           id: i + 1,
           location: [j.lng, j.lat],
           service: 0,
@@ -139,7 +167,7 @@ export class OrsService {
         return job;
       });
 
-      const res = await axios.post(
+      const res = await axios.post<OrsOptimizationResponse>(
         `${this.baseUrl}/optimization`,
         { jobs: orsJobs, vehicles },
         {
@@ -151,11 +179,13 @@ export class OrsService {
         },
       );
 
-      const steps = (res.data as any).routes?.[0]?.steps;
+      const steps = res.data.routes?.[0]?.steps;
       if (!steps || steps.length === 0) throw new Error('No steps returned');
 
       // Extract job steps (skip start/end)
-      const jobSteps = steps.filter((s: any) => s.type === 'job');
+      const jobSteps = steps.filter(
+        (s: OrsOptimizationStep) => s.type === 'job',
+      );
       const result: OptimisedLeg[] = [];
 
       for (let i = 0; i < jobSteps.length; i++) {
@@ -199,9 +229,10 @@ export class OrsService {
       }
 
       return result;
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `ORS optimise failed, falling back to time-order: ${error.message}`,
+        `ORS optimise failed, falling back to time-order: ${message}`,
       );
       return this.fallbackTimeOrder(startLat, startLng, jobs);
     }

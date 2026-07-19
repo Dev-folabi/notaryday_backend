@@ -56,4 +56,14 @@ export class CittCheckDto {
   @IsOptional()
   @Type(() => Number)
   signing_duration_mins?: number;
+
+  @ApiPropertyOptional({
+    example: 30,
+    description: 'Scanback duration override in minutes',
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  scanback_duration_mins?: number;
 }

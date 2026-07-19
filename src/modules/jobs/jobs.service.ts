@@ -14,7 +14,11 @@ import { UpdateJobDto } from './dto/update-job.dto';
 import { JobStatus, SigningType, JobSource } from '../../../generated/prisma';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { QUEUE_CALENDAR_SYNC } from '../../queues/queue.constants';
+import {
+  QUEUE_CALENDAR_SYNC,
+  QUEUE_NOTIFICATION,
+} from '../../queues/queue.constants';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // Signing types that mandate scanback
 const SCANBACK_TYPES = new Set<SigningType>([
@@ -48,8 +52,11 @@ export class JobsService {
     private readonly redis: RedisService,
     private readonly geocoding: GeocodingService,
     private readonly userSettings: UserSettingsService,
+    private readonly notifications: NotificationsService,
     @InjectQueue(QUEUE_CALENDAR_SYNC)
     private readonly calendarSyncQueue: Queue,
+    @InjectQueue(QUEUE_NOTIFICATION)
+    private readonly notificationQueue: Queue,
   ) {}
 
   // CREATE
@@ -206,7 +213,7 @@ export class JobsService {
       appointmentTime.getTime() + signingDurationMins * 60_000,
     );
 
-    return this.prisma.job.update({
+    const updated = await this.prisma.job.update({
       where: { id: jobId },
       data: {
         ...(dto.address !== undefined && { address: dto.address, lat, lng }),
@@ -240,6 +247,13 @@ export class JobsService {
         }),
       },
     });
+
+    // Apply an optional status transition (validated & timestamped)
+    if (dto.status !== undefined && dto.status !== updated.status) {
+      return this.updateStatus(userId, jobId, dto.status);
+    }
+
+    return updated;
   }
 
   // STATUS TRANSITION
@@ -320,12 +334,27 @@ export class JobsService {
     if (!nextJob?.client_email) return;
 
     const driveMins = nextJob.drive_from_prev_mins ?? 20;
-    // Queue notification (uses QUEUE_NOTIFICATION which is registered in WorkersModule)
-    await this.redis.set(
-      `eta:${nextJob.id}`,
-      JSON.stringify({ userId, nextJobId: nextJob.id, etaMins: driveMins }),
-      300,
-    );
+
+    // Queue the client ETA email (processed by NotificationProcessor)
+    await this.notificationQueue
+      .add('send-client-eta', {
+        userId,
+        nextJobId: nextJob.id,
+        etaMins: driveMins,
+      })
+      .catch(() => {});
+
+    // In-app notification for the notary that an ETA was dispatched
+    await this.notifications
+      .createNotification({
+        userId,
+        type: 'CLIENT_ETA',
+        title: 'Client ETA sent',
+        body: `Arrival notification sent to ${nextJob.client_name ?? 'your next client'} (~${driveMins} min).`,
+        jobId: nextJob.id,
+        actionUrl: `/jobs/${nextJob.id}`,
+      })
+      .catch(() => {});
   }
 
   // SOFT DELETE
