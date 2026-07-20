@@ -33,7 +33,22 @@ export class InvoicesService {
     const existing = await this.prisma.invoice.findUnique({
       where: { job_id: jobId },
     });
-    if (existing) return existing;
+
+    const recipientEmail = job.client_email ?? job.platform_name ?? '';
+    const recipientName = job.client_name ?? job.platform_name ?? null;
+
+    if (existing) {
+      // Refresh recipient details from the (possibly updated) job so the
+      // invoice always reflects the latest client email/name.
+      const updated = await this.prisma.invoice.update({
+        where: { id: existing.id },
+        data: {
+          recipient_email: recipientEmail || existing.recipient_email,
+          recipient_name: recipientName ?? existing.recipient_name,
+        },
+      });
+      return updated;
+    }
 
     // Get next invoice number
     const year = new Date().getFullYear();
@@ -46,7 +61,6 @@ export class InvoicesService {
       : 1;
     const invoiceNumber = `INV-${year}-${String(seq).padStart(4, '0')}`;
 
-    const recipientEmail = job.client_email ?? job.platform_name ?? '';
     const subtotal = Number(job.fee);
     const travelFee = Number(job.mileage_cost ?? 0);
     const total = subtotal + travelFee;
@@ -57,7 +71,7 @@ export class InvoicesService {
         job_id: jobId,
         invoice_number: invoiceNumber,
         recipient_email: recipientEmail,
-        recipient_name: job.client_name,
+        recipient_name: recipientName,
         subtotal,
         travel_fee: travelFee,
         total,
