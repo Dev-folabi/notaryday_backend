@@ -36,8 +36,15 @@ export class GeocodingService {
     const normalised = this.normalise(address);
     const cacheKey = this.cacheKey(normalised);
 
-    // Redis cache
-    const cached = await this.redis.get(cacheKey);
+    // Redis cache (best-effort — a Redis failure falls through to DB/Nominatim)
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `[Geocode] Redis read skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     if (cached) {
       const parsed = JSON.parse(cached) as { lat: number; lng: number };
       this.logger.debug(`[Geocode] Redis hit for "${normalised}"`);
@@ -55,11 +62,17 @@ export class GeocodingService {
         source: 'db',
       };
       // Warm up Redis
-      await this.redis.set(
-        cacheKey,
-        JSON.stringify({ lat: point.lat, lng: point.lng }),
-        GEOCODE_TTL_SECONDS,
-      );
+      try {
+        await this.redis.set(
+          cacheKey,
+          JSON.stringify({ lat: point.lat, lng: point.lng }),
+          GEOCODE_TTL_SECONDS,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `[Geocode] Redis warm-up skipped: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       // Bump hit count
       await this.prisma.geocodeCache.update({
         where: { id: dbRecord.id },
@@ -74,11 +87,17 @@ export class GeocodingService {
     if (!point) return null;
 
     // Store in both caches
-    await this.redis.set(
-      cacheKey,
-      JSON.stringify({ lat: point.lat, lng: point.lng }),
-      GEOCODE_TTL_SECONDS,
-    );
+    try {
+      await this.redis.set(
+        cacheKey,
+        JSON.stringify({ lat: point.lat, lng: point.lng }),
+        GEOCODE_TTL_SECONDS,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `[Geocode] Redis write skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     await this.prisma.geocodeCache.upsert({
       where: { address_normalised: normalised },
       create: {

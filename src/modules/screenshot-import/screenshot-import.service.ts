@@ -73,11 +73,23 @@ export class ScreenshotImportService {
     });
 
     // Queue for AI vision processing
-    await this.queue.add('parse-screenshot', {
-      importId: importRecord.id,
-      fileKey,
-      mimetype: file.mimetype,
-    });
+    try {
+      // Best-effort: if Redis/queue is down, give up after 2s — the import
+      // record is already persisted and can be re-queued.
+      await Promise.race([
+        this.queue.add('parse-screenshot', {
+          importId: importRecord.id,
+          fileKey,
+          mimetype: file.mimetype,
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue screenshot parse for ${importRecord.id}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
 
     return { status: 'queued', importId: importRecord.id };
   }

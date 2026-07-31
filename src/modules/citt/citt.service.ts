@@ -74,7 +74,14 @@ export class CittService {
 
     const cacheKey = `citt:${userId}:${cacheFingerprint}`;
 
-    const cached = await this.redis.get(cacheKey);
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `[CITT] Cache read skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     if (cached) {
       this.logger.debug(`[CITT] Cache hit: ${cacheKey}`);
       return JSON.parse(cached) as CittResult;
@@ -308,7 +315,14 @@ export class CittService {
     toLng: number,
   ): Promise<{ distanceMiles: number; driveTimeMins: number } | null> {
     const cacheKey = `ors:${fromLat.toFixed(5)},${fromLng.toFixed(5)}:${toLat.toFixed(5)},${toLng.toFixed(5)}`;
-    const cached = await this.redis.get(cacheKey);
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `[CITT] ORS cache read skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     if (cached) {
       return JSON.parse(cached) as {
         distanceMiles: number;
@@ -355,7 +369,13 @@ export class CittService {
         driveTimeMins: Math.ceil(summary.duration / 60),
       };
 
-      await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
+      try {
+        await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
+      } catch (err) {
+        this.logger.warn(
+          `[CITT] ORS cache write skipped: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       return result;
     } catch (error) {
       let errorMessage = 'Unknown error';
@@ -424,7 +444,13 @@ export class CittService {
   }
 
   private async cacheResult(key: string, result: any): Promise<void> {
-    await this.redis.set(key, JSON.stringify(result), CITT_CACHE_TTL);
+    try {
+      await this.redis.set(key, JSON.stringify(result), CITT_CACHE_TTL);
+    } catch (err) {
+      this.logger.warn(
+        `[CITT] Cache write skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private async getSigningDuration(

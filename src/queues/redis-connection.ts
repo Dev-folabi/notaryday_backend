@@ -22,6 +22,7 @@ export const bullRedisConnection = (
       password: parsed.password || undefined,
       tls: tls ? { rejectUnauthorized: isProduction } : undefined,
       maxRetriesPerRequest: null,
+      enableOfflineQueue: false,
     } as BullRootModuleOptions['redis'],
   };
 };

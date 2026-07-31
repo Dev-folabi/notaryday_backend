@@ -42,11 +42,18 @@ export class NotificationCronService {
       });
       if (existing) continue;
 
-      await this.notifQueue.add('send-reminder', {
-        userId: job.user_id,
-        jobId: job.id,
-        type: 'pre_signing',
-      });
+      try {
+        await this.notifQueue.add('send-reminder', {
+          userId: job.user_id,
+          jobId: job.id,
+          type: 'pre_signing',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to enqueue reminder for job ${job.id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     }
 
     if (jobs.length > 0)
@@ -72,10 +79,17 @@ export class NotificationCronService {
     });
 
     for (const { user_id } of usersWithJobs) {
-      await this.notifQueue.add('daily-summary', {
-        userId: user_id,
-        date: today.toISOString().slice(0, 10),
-      });
+      try {
+        await this.notifQueue.add('daily-summary', {
+          userId: user_id,
+          date: today.toISOString().slice(0, 10),
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to enqueue daily summary for user ${user_id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     }
 
     if (usersWithJobs.length > 0)

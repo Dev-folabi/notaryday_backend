@@ -88,7 +88,7 @@ export class InvoicesService {
       ]);
 
     await enqueue('generate-pdf', { invoiceId: invoice.id, userId });
-    if (recipientEmail) {
+    if (recipientEmail && recipientEmail.includes('@')) {
       await enqueue('send-email', { invoiceId: invoice.id, userId });
     }
 

@@ -332,6 +332,14 @@ export class PlannerService {
 
   // Cache invalidation
   async invalidateRouteCache(userId: string, date: string): Promise<void> {
-    await this.redis.del(`route:${userId}:${date}`);
+    try {
+      await this.redis.del(`route:${userId}:${date}`);
+    } catch (err) {
+      this.logger.warn(
+        `Route cache invalidation skipped for ${date}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }

@@ -74,7 +74,14 @@ export class OrsService {
     toLng: number,
   ): Promise<RouteResult | null> {
     const cacheKey = `ors:${fromLat.toFixed(5)},${fromLng.toFixed(5)}:${toLat.toFixed(5)},${toLng.toFixed(5)}`;
-    const cached = await this.redis.get(cacheKey);
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `[ORS] Cache read skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     if (cached) return JSON.parse(cached) as RouteResult;
 
     try {
@@ -105,7 +112,13 @@ export class OrsService {
         driveTimeMins: Math.ceil(summary.duration / 60),
       };
 
-      await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
+      try {
+        await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
+      } catch (err) {
+        this.logger.warn(
+          `[ORS] Cache write skipped: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

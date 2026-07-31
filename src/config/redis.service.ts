@@ -20,6 +20,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     this.client = new Redis(url, {
       tls: { rejectUnauthorized: isProduction },
       lazyConnect: true,
+      // Fail fast instead of queuing commands forever when the connection is
+      // down or half-open (e.g. Upstash sleeping idle sockets).
+      enableOfflineQueue: false,
+      commandTimeout: 5000,
     });
 
     await this.client.connect();
