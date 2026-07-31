@@ -157,8 +157,13 @@ export class InvoiceProcessor {
             <p>Amount due: <strong>$${invoice.total.toString()}</strong></p>
             <p>Service: ${invoice.job.signing_type.replace('_', ' ')} at ${invoice.job.address}</p>
             <p>Date: ${invoice.job.appointment_time.toLocaleDateString()}</p>
+            ${
+              invoice.pdf_url
+                ? `<p style="margin-top:16px"><a href="${invoice.pdf_url}" style="background:#0F2C4E;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block">View / download invoice PDF</a></p>`
+                : ''
+            }
             <hr style="border:none;border-top:1px solid #E2E8F0;margin:20px 0">
-            <p style="font-size:12px;color:#64748B">Payment details are included in the attached PDF.</p>
+            <p style="font-size:12px;color:#64748B">Payment details are included on the invoice PDF.</p>
           </div>
         `,
       });

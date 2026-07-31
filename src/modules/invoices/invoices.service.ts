@@ -78,11 +78,19 @@ export class InvoicesService {
       },
     });
 
-    // Queue PDF generation + email sending
-    await this.invoiceQueue.add('generate-pdf', {
-      invoiceId: invoice.id,
-      userId,
-    });
+    // Queue PDF generation + email sending. Best-effort: if Redis/queue is
+    // slow or down, give up after 2s so the response is never blocked — the
+    // invoice record is already persisted.
+    const enqueue = (name: string, data: Record<string, unknown>) =>
+      Promise.race([
+        this.invoiceQueue.add(name, data),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+
+    await enqueue('generate-pdf', { invoiceId: invoice.id, userId });
+    if (recipientEmail) {
+      await enqueue('send-email', { invoiceId: invoice.id, userId });
+    }
 
     return this.prisma.invoice.findFirst({
       where: { id: invoice.id },
@@ -177,7 +185,11 @@ export class InvoicesService {
         data: { recipient_email: recipientEmail },
       });
     }
-    await this.invoiceQueue.add('send-email', { invoiceId: id, userId });
+    // Best-effort: never let a slow/down Redis block the response.
+    await Promise.race([
+      this.invoiceQueue.add('send-email', { invoiceId: id, userId }),
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ]);
     await this.prisma.invoice.update({
       where: { id },
       data: { sent_at: new Date() },

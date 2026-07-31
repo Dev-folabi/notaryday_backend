@@ -37,7 +37,7 @@ const TRANSITIONS: Record<JobStatus, JobStatus[]> = {
     JobStatus.COMPLETE,
     JobStatus.CANCELLED,
   ],
-  [JobStatus.SCANNING]: [JobStatus.COMPLETE],
+  [JobStatus.SCANNING]: [JobStatus.COMPLETE, JobStatus.IN_PROGRESS],
   [JobStatus.COMPLETE]: [],
   [JobStatus.CANCELLED]: [],
   [JobStatus.DECLINED]: [],
@@ -168,10 +168,16 @@ export class JobsService {
 
     if (job.status === JobStatus.CONFIRMED) {
       try {
-        await this.calendarSyncQueue.add('sync-job', {
-          userId,
-          jobId: job.id,
-        });
+        // Best-effort side-effect: if Redis/queue is slow or down, give up
+        // after 2s so the POST /jobs response is never blocked. The job is
+        // already persisted — calendar sync must not hold it hostage.
+        await Promise.race([
+          this.calendarSyncQueue.add('sync-job', {
+            userId,
+            jobId: job.id,
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+        ]);
       } catch (err) {
         // Calendar sync is a side-effect — a Redis hiccup must not fail the
         // job creation (the job is already persisted).
@@ -323,14 +329,32 @@ export class JobsService {
     const timestamps: Partial<{
       confirmed_at: Date;
       started_at: Date;
-      scanning_started_at: Date;
+      scanning_started_at: Date | null;
+      scanback_ends_at: Date | null;
       completed_at: Date;
       cancelled_at: Date;
     }> = {};
 
     if (newStatus === JobStatus.CONFIRMED) timestamps.confirmed_at = now;
-    if (newStatus === JobStatus.IN_PROGRESS) timestamps.started_at = now;
-    if (newStatus === JobStatus.SCANNING) timestamps.scanning_started_at = now;
+    if (newStatus === JobStatus.IN_PROGRESS) {
+      timestamps.started_at = now;
+      // Reverting from SCANNING resets the scanback window so the countdown
+      // restarts fresh next time signing is marked done.
+      if (job.status === JobStatus.SCANNING) {
+        timestamps.scanning_started_at = null;
+        timestamps.scanback_ends_at = null;
+      }
+    }
+    if (newStatus === JobStatus.SCANNING) {
+      timestamps.scanning_started_at = now;
+      // Anchor the countdown to the actual start so a late "signing done"
+      // doesn't leave the client waiting on a stale planned end time.
+      const durationMins = job.scanback_duration_mins ?? 0;
+      timestamps.scanback_ends_at =
+        durationMins > 0
+          ? new Date(now.getTime() + durationMins * 60_000)
+          : null;
+    }
     if (newStatus === JobStatus.COMPLETE) timestamps.completed_at = now;
     if (newStatus === JobStatus.CANCELLED) timestamps.cancelled_at = now;
 
@@ -351,7 +375,18 @@ export class JobsService {
       newStatus === JobStatus.CONFIRMED &&
       job.status !== JobStatus.CONFIRMED
     ) {
-      await this.calendarSyncQueue.add('sync-job', { userId, jobId: job.id });
+      try {
+        // Best-effort: never let a slow/down Redis block the response.
+        await Promise.race([
+          this.calendarSyncQueue.add('sync-job', { userId, jobId: job.id }),
+          new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+        ]);
+      } catch (err) {
+        this.logger.error(
+          `Failed to enqueue calendar sync for job ${job.id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     }
 
     return updated;
@@ -433,6 +468,19 @@ export class JobsService {
 
   private async invalidateRouteCache(userId: string, appointmentTime: Date) {
     const date = appointmentTime.toISOString().slice(0, 10);
-    await this.redis.del(`route:${userId}:${date}`);
+    try {
+      // Best-effort cache invalidation: a slow/down Redis must never hold the
+      // response hostage — the job is already persisted.
+      await Promise.race([
+        this.redis.del(`route:${userId}:${date}`),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch (err) {
+      this.logger.warn(
+        `Route cache invalidation skipped for ${date}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }
