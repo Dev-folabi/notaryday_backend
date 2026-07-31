@@ -25,6 +25,9 @@ CREATE TYPE "ExpenseCategory" AS ENUM ('MILEAGE', 'SUPPLIES', 'EDUCATION', 'INSU
 -- CreateEnum
 CREATE TYPE "ImportStatus" AS ENUM ('QUEUED', 'PROCESSING', 'COMPLETE', 'FAILED', 'DUPLICATE');
 
+-- CreateEnum
+CREATE TYPE "ScanbackStatus" AS ENUM ('PENDING', 'COMPLETE', 'FAILED');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
@@ -34,8 +37,8 @@ CREATE TABLE "users" (
     "full_name" TEXT,
     "phone" TEXT,
     "plan" "PlanTier" NOT NULL DEFAULT 'FREE',
-    "stripe_customer_id" TEXT,
-    "stripe_subscription_id" TEXT,
+    "lemon_squeezy_customer_id" TEXT,
+    "lemon_squeezy_subscription_id" TEXT,
     "plan_expires_at" TIMESTAMPTZ,
     "onboarding_completed" BOOLEAN NOT NULL DEFAULT false,
     "onboarding_step" INTEGER NOT NULL DEFAULT 1,
@@ -59,12 +62,15 @@ CREATE TABLE "user_settings" (
     "irs_rate_per_mile" DECIMAL(5,4) NOT NULL DEFAULT 0.72,
     "vehicle_type" TEXT,
     "min_acceptable_net" DECIMAL(8,2) NOT NULL DEFAULT 20.00,
+    "scanback_duration_mins" INTEGER,
     "booking_page_enabled" BOOLEAN NOT NULL DEFAULT false,
     "booking_page_bio" TEXT,
     "service_area_miles" INTEGER NOT NULL DEFAULT 25,
     "booking_buffer_mins" INTEGER NOT NULL DEFAULT 15,
     "booking_page_active_hours" JSONB,
     "booking_page_services" JSONB,
+    "booking_min_notice_hours" INTEGER NOT NULL DEFAULT 0,
+    "booking_advance_limit_days" INTEGER NOT NULL DEFAULT 30,
     "payment_info" JSONB,
     "invoice_notes" TEXT,
     "invoice_due_days" INTEGER NOT NULL DEFAULT 0,
@@ -73,6 +79,8 @@ CREATE TABLE "user_settings" (
     "client_eta_enabled" BOOLEAN NOT NULL DEFAULT true,
     "preferred_nav_app" "NavApp" NOT NULL DEFAULT 'GOOGLE_MAPS',
     "ics_feed_token" TEXT NOT NULL,
+    "google_calendar_connected" BOOLEAN NOT NULL DEFAULT false,
+    "google_calendar_token" JSONB,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
 
@@ -90,6 +98,19 @@ CREATE TABLE "signing_type_defaults" (
     "updated_at" TIMESTAMPTZ NOT NULL,
 
     CONSTRAINT "signing_type_defaults_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "day_plans" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "date" DATE NOT NULL,
+    "total_drive_time" INTEGER NOT NULL DEFAULT 0,
+    "total_earnings" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL,
+
+    CONSTRAINT "day_plans_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -113,13 +134,16 @@ CREATE TABLE "jobs" (
     "mileage_cost" DECIMAL(8,2),
     "net_earnings" DECIMAL(8,2),
     "effective_hourly" DECIMAL(8,2),
+    "irs_rate_snapshot" DECIMAL(5,4) NOT NULL,
     "client_name" TEXT,
     "client_phone" TEXT,
     "client_email" TEXT,
     "platform_name" TEXT,
     "signer_count" INTEGER NOT NULL DEFAULT 1,
+    "day_plan_id" TEXT,
     "booking_id" TEXT,
     "email_import_id" TEXT,
+    "idempotency_key" TEXT,
     "confirmed_at" TIMESTAMPTZ,
     "started_at" TIMESTAMPTZ,
     "scanning_started_at" TIMESTAMPTZ,
@@ -131,8 +155,23 @@ CREATE TABLE "jobs" (
     "drive_from_prev_miles" DECIMAL(8,2),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
+    "deleted_at" TIMESTAMPTZ,
 
     CONSTRAINT "jobs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "scanbacks" (
+    "id" TEXT NOT NULL,
+    "job_id" TEXT NOT NULL,
+    "start_time" TIMESTAMPTZ NOT NULL,
+    "end_time" TIMESTAMPTZ NOT NULL,
+    "location" TEXT NOT NULL,
+    "status" "ScanbackStatus" NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL,
+
+    CONSTRAINT "scanbacks_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -159,6 +198,7 @@ CREATE TABLE "bookings" (
     "confirmed_at" TIMESTAMPTZ,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
+    "deleted_at" TIMESTAMPTZ,
 
     CONSTRAINT "bookings_pkey" PRIMARY KEY ("id")
 );
@@ -210,6 +250,7 @@ CREATE TABLE "invoices" (
     "resend_email_id" TEXT,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
+    "deleted_at" TIMESTAMPTZ,
 
     CONSTRAINT "invoices_pkey" PRIMARY KEY ("id")
 );
@@ -226,6 +267,7 @@ CREATE TABLE "expenses" (
     "notes" TEXT,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
+    "deleted_at" TIMESTAMPTZ,
 
     CONSTRAINT "expenses_pkey" PRIMARY KEY ("id")
 );
@@ -246,6 +288,7 @@ CREATE TABLE "journal_entries" (
     "notes" TEXT,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
+    "deleted_at" TIMESTAMPTZ,
 
     CONSTRAINT "journal_entries_pkey" PRIMARY KEY ("id")
 );
@@ -279,6 +322,21 @@ CREATE TABLE "lemonsqueezy_events" (
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "lemonsqueezy_events_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "email_templates" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "subject" TEXT NOT NULL,
+    "body" TEXT NOT NULL,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL,
+
+    CONSTRAINT "email_templates_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -332,10 +390,10 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_stripe_customer_id_key" ON "users"("stripe_customer_id");
+CREATE UNIQUE INDEX "users_lemon_squeezy_customer_id_key" ON "users"("lemon_squeezy_customer_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_stripe_subscription_id_key" ON "users"("stripe_subscription_id");
+CREATE UNIQUE INDEX "users_lemon_squeezy_subscription_id_key" ON "users"("lemon_squeezy_subscription_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "user_settings_user_id_key" ON "user_settings"("user_id");
@@ -347,7 +405,16 @@ CREATE UNIQUE INDEX "user_settings_ics_feed_token_key" ON "user_settings"("ics_f
 CREATE UNIQUE INDEX "signing_type_defaults_user_id_signing_type_key" ON "signing_type_defaults"("user_id", "signing_type");
 
 -- CreateIndex
+CREATE INDEX "day_plans_user_id_idx" ON "day_plans"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "day_plans_user_id_date_key" ON "day_plans"("user_id", "date");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "jobs_booking_id_key" ON "jobs"("booking_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "jobs_idempotency_key_key" ON "jobs"("idempotency_key");
 
 -- CreateIndex
 CREATE INDEX "jobs_user_id_appointment_time_idx" ON "jobs"("user_id", "appointment_time");
@@ -357,6 +424,12 @@ CREATE INDEX "jobs_user_id_status_idx" ON "jobs"("user_id", "status");
 
 -- CreateIndex
 CREATE INDEX "jobs_user_id_appointment_time_status_idx" ON "jobs"("user_id", "appointment_time", "status");
+
+-- CreateIndex
+CREATE INDEX "jobs_day_plan_id_idx" ON "jobs"("day_plan_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "jobs_day_plan_id_route_sequence_key" ON "jobs"("day_plan_id", "route_sequence");
 
 -- CreateIndex
 CREATE INDEX "bookings_notary_id_status_idx" ON "bookings"("notary_id", "status");
@@ -398,6 +471,12 @@ CREATE UNIQUE INDEX "calendar_connections_user_id_provider_key" ON "calendar_con
 CREATE INDEX "lemonsqueezy_events_event_name_processed_idx" ON "lemonsqueezy_events"("event_name", "processed");
 
 -- CreateIndex
+CREATE INDEX "email_templates_user_id_idx" ON "email_templates"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "email_templates_user_id_type_key" ON "email_templates"("user_id", "type");
+
+-- CreateIndex
 CREATE INDEX "notifications_user_id_is_read_idx" ON "notifications"("user_id", "is_read");
 
 -- CreateIndex
@@ -419,13 +498,22 @@ ALTER TABLE "user_settings" ADD CONSTRAINT "user_settings_user_id_fkey" FOREIGN 
 ALTER TABLE "signing_type_defaults" ADD CONSTRAINT "signing_type_defaults_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "day_plans" ADD CONSTRAINT "day_plans_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "jobs" ADD CONSTRAINT "jobs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "jobs" ADD CONSTRAINT "jobs_day_plan_id_fkey" FOREIGN KEY ("day_plan_id") REFERENCES "day_plans"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "jobs" ADD CONSTRAINT "jobs_booking_id_fkey" FOREIGN KEY ("booking_id") REFERENCES "bookings"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "jobs" ADD CONSTRAINT "jobs_email_import_id_fkey" FOREIGN KEY ("email_import_id") REFERENCES "email_imports"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "scanbacks" ADD CONSTRAINT "scanbacks_job_id_fkey" FOREIGN KEY ("job_id") REFERENCES "jobs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "bookings" ADD CONSTRAINT "bookings_notary_id_fkey" FOREIGN KEY ("notary_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -447,6 +535,9 @@ ALTER TABLE "journal_entries" ADD CONSTRAINT "journal_entries_user_id_fkey" FORE
 
 -- AddForeignKey
 ALTER TABLE "calendar_connections" ADD CONSTRAINT "calendar_connections_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "email_templates" ADD CONSTRAINT "email_templates_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
