@@ -393,7 +393,9 @@ model EmailImport {
 
   // Raw email data from Resend inbound webhook
   resend_message_id String  @unique
+  resend_email_id   String? // Resend API id — used to fetch the email body (webhook is metadata-only)
   from_address      String
+  recipient_address String? // The import address the email was sent to (import+username@...)
   subject           String?
   raw_text          String  @db.Text
   raw_html          String? @db.Text

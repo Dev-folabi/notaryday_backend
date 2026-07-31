@@ -21,6 +21,18 @@ export class EmailImportController {
   @ApiBody({
     schema: {
       properties: {
+        type: { type: 'string' },
+        data: {
+          type: 'object',
+          properties: {
+            email_id: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'array', items: { type: 'string' } },
+            bcc: { type: 'array', items: { type: 'string' } },
+            subject: { type: 'string' },
+            message_id: { type: 'string' },
+          },
+        },
         from: { type: 'string' },
         subject: { type: 'string' },
         text: { type: 'string' },
@@ -36,8 +48,22 @@ export class EmailImportController {
   async handleInbound(
     @Body()
     body: {
+      // Resend email.received webhook envelope
+      type?: string;
+      data?: {
+        email_id?: string;
+        from?: string;
+        to?: string[];
+        cc?: string[];
+        bcc?: string[];
+        subject?: string;
+        message_id?: string;
+      };
+      // Legacy flat payload (kept for backward compat)
       from?: string;
       sender?: string;
+      to?: string | string[];
+      bcc?: string | string[];
       subject?: string;
       text?: string;
       plain?: string;
@@ -46,14 +72,27 @@ export class EmailImportController {
       message_id?: string;
     },
   ) {
+    const data = body.data ?? {};
     const result = await this.emailImport.handleInbound({
-      from: body.from ?? body.sender ?? '',
-      subject: body.subject,
+      from: data.from ?? body.from ?? body.sender ?? '',
+      to: data.to ?? this.toArray(body.to),
+      bcc: data.bcc ?? this.toArray(body.bcc),
+      subject: data.subject ?? body.subject,
       text: body.text ?? body.plain ?? '',
       html: body.html,
-      messageId: body.messageId ?? body.message_id ?? `msg-${Date.now()}`,
+      emailId: data.email_id,
+      messageId:
+        data.message_id ??
+        body.messageId ??
+        body.message_id ??
+        `msg-${Date.now()}`,
     });
     return { success: true, data: result };
+  }
+
+  private toArray(value: string | string[] | undefined): string[] {
+    if (!value) return [];
+    return Array.isArray(value) ? value : [value];
   }
 
   @Get()

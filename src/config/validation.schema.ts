@@ -22,7 +22,7 @@ export const validationSchema = Joi.object({
 
   // Resend
   RESEND_API_KEY: Joi.string().required(),
-  RESEND_IMPORT_EMAIL: Joi.string().default('import@notaryday.app'),
+  RESEND_IMPORT_DOMAIN: Joi.string().default('inbound.notaryday.app'),
 
   // Lemon Squeezy
   LEMONSQUEEZY_API_KEY: Joi.string().allow('').default(''),

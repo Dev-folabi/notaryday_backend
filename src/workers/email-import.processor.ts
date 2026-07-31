@@ -2,6 +2,7 @@ import { Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { ConfigService } from '@nestjs/config';
+import { Resend } from 'resend';
 import axios from 'axios';
 import { PrismaService } from '../config/prisma.service';
 import { QUEUE_EMAIL_IMPORT } from '../queues/queue.constants';
@@ -32,6 +33,16 @@ export class EmailImportProcessor {
     });
 
     try {
+      // The Resend webhook is metadata-only — fetch the body when missing
+      const rawText =
+        record.raw_text || (await this.fetchEmailBody(record.resend_email_id));
+      if (rawText && rawText !== record.raw_text) {
+        await this.prisma.emailImport.update({
+          where: { id: importId },
+          data: { raw_text: rawText },
+        });
+      }
+
       const apiKey = this.config.get<string>('OPENROUTER_API_KEY');
       const model =
         this.config.get<string>('OPENROUTER_MODEL') ??
@@ -49,7 +60,7 @@ export class EmailImportProcessor {
               content:
                 'Extract signing appointment details from this email. Return JSON only with fields: address, appointment_time (ISO 8601), signing_type (GENERAL|LOAN_REFI|HYBRID|PURCHASE_CLOSING|FIELD_INSPECTION|APOSTILLE), fee (number), platform_fee (number), client_name, platform_name, notes. All fields nullable.',
             },
-            { role: 'user', content: record.raw_text },
+            { role: 'user', content: rawText },
           ],
           temperature: 0,
         },
@@ -136,5 +147,22 @@ export class EmailImportProcessor {
         },
       });
     }
+  }
+
+  /** Fetch a received email's body from the Resend API by its email_id */
+  private async fetchEmailBody(emailId: string | null): Promise<string> {
+    if (!emailId) return '';
+    const apiKey = this.config.get<string>('RESEND_API_KEY');
+    if (!apiKey) {
+      this.logger.warn('RESEND_API_KEY is not configured');
+      return '';
+    }
+
+    const resend = new Resend(apiKey);
+    const { data, error } = await resend.emails.receiving.get(emailId);
+    if (error) {
+      throw new Error(`Resend fetch failed: ${error.message}`);
+    }
+    return data?.text ?? data?.html ?? '';
   }
 }

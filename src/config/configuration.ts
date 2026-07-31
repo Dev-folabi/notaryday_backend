@@ -34,7 +34,7 @@ export const openRouterConfig = registerAs('openrouter', () => ({
 
 export const resendConfig = registerAs('resend', () => ({
   apiKey: process.env.RESEND_API_KEY!,
-  importEmail: process.env.RESEND_IMPORT_EMAIL ?? 'import@notaryday.app',
+  importDomain: process.env.RESEND_IMPORT_DOMAIN ?? 'inbound.notaryday.app',
 }));
 
 export const lemonSqueezyConfig = registerAs('lemonsqueezy', () => ({

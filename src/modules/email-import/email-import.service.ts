@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { PrismaService } from '../../config/prisma.service';
@@ -18,24 +19,44 @@ export class EmailImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userSettings: UserSettingsService,
+    private readonly config: ConfigService,
     @InjectQueue(QUEUE_EMAIL_IMPORT) private readonly queue: Queue,
   ) {}
 
   /** Handle inbound email webhook from Resend */
   async handleInbound(payload: {
     from: string;
+    to?: string[];
+    bcc?: string[];
     subject?: string;
     text: string;
     html?: string;
+    emailId?: string;
     messageId: string;
   }) {
-    // Match sender to a user
-    const user = await this.prisma.user.findFirst({
-      where: { email: payload.from },
+    const importDomain = this.config
+      .get<string>('RESEND_IMPORT_DOMAIN')
+      ?.toLowerCase();
+    const recipient = this.resolveRecipient(
+      [...(payload.to ?? []), ...(payload.bcc ?? [])],
+      importDomain,
+    );
+    if (!recipient) {
+      this.logger.warn(
+        `Inbound email with no import recipient: to=${(payload.to ?? []).join(',')} bcc=${(payload.bcc ?? []).join(',')}`,
+      );
+      return { status: 'rejected', reason: 'unknown_recipient' };
+    }
+
+    // Route by the import address the email was sent to (import+username@...)
+    const user = await this.prisma.user.findUnique({
+      where: { username: recipient.username },
     });
     if (!user) {
-      this.logger.warn(`Inbound email from unknown sender: ${payload.from}`);
-      return { status: 'rejected', reason: 'unknown_sender' };
+      this.logger.warn(
+        `Inbound email to unknown username: ${recipient.username}`,
+      );
+      return { status: 'rejected', reason: 'unknown_recipient' };
     }
 
     // Create import record
@@ -43,16 +64,18 @@ export class EmailImportService {
       data: {
         user_id: user.id,
         resend_message_id: payload.messageId,
+        resend_email_id: payload.emailId ?? null,
         from_address: payload.from,
+        recipient_address: recipient.address,
         subject: payload.subject,
-        raw_text: payload.text,
+        raw_text: payload.text || '',
         raw_html: payload.html,
         status: ImportStatus.QUEUED,
         received_at: new Date(),
       },
     });
 
-    // Queue for AI processing
+    // Queue for AI processing (body is fetched from Resend by the worker)
     await this.queue.add(
       'parse-email',
       { importId: importRecord.id },
@@ -60,6 +83,50 @@ export class EmailImportService {
     );
 
     return { status: 'queued', importId: importRecord.id };
+  }
+
+  /**
+   * Pick the import recipient from the To/Bcc addresses.
+   * Supported shapes: import+username@domain or username@import.<domain>.
+   */
+  private resolveRecipient(
+    addresses: string[],
+    importDomain?: string,
+  ): { username: string; address: string } | null {
+    for (const raw of addresses) {
+      const address = this.extractAddress(raw)?.toLowerCase();
+      if (!address) continue;
+
+      const [localPart, domain] = address.split('@');
+      if (!localPart || !domain) continue;
+
+      // Restrict to the configured inbound domain when set
+      if (importDomain && domain !== importDomain) continue;
+
+      const local = localPart.trim();
+
+      // import+username@... plus-addressing
+      const plusPrefix = 'import+';
+      if (local.startsWith(plusPrefix)) {
+        const username = local.slice(plusPrefix.length);
+        if (username) return { username, address };
+        continue;
+      }
+
+      // username@import.<domain> subdomain-style
+      if (local !== 'import') {
+        return { username: local, address };
+      }
+    }
+    return null;
+  }
+
+  /** Extract the bare email address from a possibly "Name <email>" value */
+  private extractAddress(value: string): string | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/<([^<>]+)>/);
+    return (match ? match[1] : trimmed).trim() || null;
   }
 
   /** List imports for a user */
