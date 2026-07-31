@@ -61,7 +61,16 @@ export class JobsService {
 
   // CREATE
 
-  async create(userId: string, dto: CreateJobDto) {
+  async create(userId: string, dto: CreateJobDto, idempotencyKey?: string) {
+    // Idempotency: a client-supplied key means "this is the same logical
+    // create" — return the existing job instead of creating a duplicate.
+    if (idempotencyKey) {
+      const existing = await this.prisma.job.findFirst({
+        where: { idempotency_key: idempotencyKey, user_id: userId },
+      });
+      if (existing) return existing;
+    }
+
     // Get user settings (IRS rate + signing defaults)
     const settings = await this.userSettings.get(userId);
     const irsRate = Number(settings.irs_rate_per_mile);
@@ -105,41 +114,72 @@ export class JobsService {
       driveTimeMins: 0,
     });
 
-    const job = await this.prisma.job.create({
-      data: {
-        user_id: userId,
-        address: dto.address,
-        lat: geoPoint?.lat,
-        lng: geoPoint?.lng,
-        appointment_time: appointmentTime,
-        signing_duration_mins: signingDurationMins,
-        scanback_duration_mins: scanbackDurationMins,
-        signing_ends_at: signingEndsAt,
-        scanback_ends_at: scanbackEndsAt,
-        signing_type: dto.signing_type ?? SigningType.GENERAL,
-        source: dto.source,
-        fee: dto.fee,
-        platform_fee: dto.platform_fee ?? 0,
-        net_earnings: profitability.netEarnings,
-        effective_hourly: profitability.effectiveHourly,
-        irs_rate_snapshot: irsRate,
-        client_name: dto.client_name,
-        client_email: dto.client_email,
-        client_phone: dto.client_phone,
-        platform_name: dto.platform_name,
-        signer_count: dto.signer_count ?? 1,
-        notes: dto.notes,
-        status:
-          dto.source === JobSource.MANUAL
-            ? JobStatus.CONFIRMED
-            : JobStatus.PENDING,
-        confirmed_at: dto.source === JobSource.MANUAL ? new Date() : null,
-      },
-    });
+    let job: Awaited<ReturnType<typeof this.prisma.job.create>>;
+    try {
+      job = await this.prisma.job.create({
+        data: {
+          user_id: userId,
+          address: dto.address,
+          lat: geoPoint?.lat,
+          lng: geoPoint?.lng,
+          appointment_time: appointmentTime,
+          signing_duration_mins: signingDurationMins,
+          scanback_duration_mins: scanbackDurationMins,
+          signing_ends_at: signingEndsAt,
+          scanback_ends_at: scanbackEndsAt,
+          signing_type: dto.signing_type ?? SigningType.GENERAL,
+          source: dto.source,
+          fee: dto.fee,
+          platform_fee: dto.platform_fee ?? 0,
+          net_earnings: profitability.netEarnings,
+          effective_hourly: profitability.effectiveHourly,
+          irs_rate_snapshot: irsRate,
+          client_name: dto.client_name,
+          client_email: dto.client_email,
+          client_phone: dto.client_phone,
+          platform_name: dto.platform_name,
+          signer_count: dto.signer_count ?? 1,
+          notes: dto.notes,
+          idempotency_key: idempotencyKey,
+          status:
+            dto.source === JobSource.MANUAL
+              ? JobStatus.CONFIRMED
+              : JobStatus.PENDING,
+          confirmed_at: dto.source === JobSource.MANUAL ? new Date() : null,
+        },
+      });
+    } catch (err: any) {
+      // Unique constraint on idempotency_key: a concurrent retry with the
+      // same key already created the job — return it instead of failing.
+      if (
+        idempotencyKey &&
+        err?.code === 'P2002' &&
+        err?.meta?.target?.includes('idempotency_key')
+      ) {
+        const existing = await this.prisma.job.findFirst({
+          where: { idempotency_key: idempotencyKey, user_id: userId },
+        });
+        if (existing) return existing;
+      }
+      throw err;
+    }
+
     await this.invalidateRouteCache(userId, appointmentTime);
 
     if (job.status === JobStatus.CONFIRMED) {
-      await this.calendarSyncQueue.add('sync-job', { userId, jobId: job.id });
+      try {
+        await this.calendarSyncQueue.add('sync-job', {
+          userId,
+          jobId: job.id,
+        });
+      } catch (err) {
+        // Calendar sync is a side-effect — a Redis hiccup must not fail the
+        // job creation (the job is already persisted).
+        this.logger.error(
+          `Failed to enqueue calendar sync for job ${job.id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     }
 
     return job;

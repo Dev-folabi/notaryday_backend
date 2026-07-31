@@ -8,6 +8,7 @@ import { AppConfigModule } from './config/config.module';
 import { RedisModule } from './config/redis.module';
 import { PrismaModule } from './config/prisma.module';
 import { QueueModule } from './queues/queue.module';
+import { bullRedisConnection } from './queues/redis-connection';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
@@ -51,27 +52,18 @@ import { WorkersModule } from './workers/workers.module';
     // Scheduling
     ScheduleModule.forRoot(),
 
-    // BullMQ (Redis configured in QueueModule)
+    // BullMQ (Redis connection parsed from UPSTASH_REDIS_URL)
     BullModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const url = config.get<string>('UPSTASH_REDIS_URL');
-        return {
-          defaultJobOptions: {
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 2000 },
-            removeOnComplete: 100,
-            removeOnFail: 200,
-          },
-          redis: {
-            url,
-            tls: {
-              rejectUnauthorized:
-                config.get<string>('NODE_ENV') === 'production',
-            },
-          },
-        };
-      },
+      useFactory: (config: ConfigService) => ({
+        ...bullRedisConnection(config),
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2000 },
+          removeOnComplete: 100,
+          removeOnFail: 200,
+        },
+      }),
     }),
 
     // Core

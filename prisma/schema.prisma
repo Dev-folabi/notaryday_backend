@@ -281,10 +281,11 @@ model Job {
   day_plan    DayPlan? @relation(fields: [day_plan_id], references: [id])
 
   // Source linkage
-  booking_id      String?      @unique // FK if came from booking page
+  booking_id      String?      @unique
   booking         Booking?     @relation(fields: [booking_id], references: [id])
-  email_import_id String? // FK to EmailImport if parsed from email
+  email_import_id String? 
   email_import    EmailImport? @relation(fields: [email_import_id], references: [id])
+  idempotency_key String?      @unique
 
   // Status timestamps (for analytics + audit)
   confirmed_at        DateTime? @db.Timestamptz

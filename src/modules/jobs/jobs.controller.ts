@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Query,
+  Headers,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -37,8 +38,12 @@ export class JobsController {
   @Post()
   @ApiOperation({ summary: 'Create a new signing job' })
   @ApiResponse({ status: 201, description: 'Job created' })
-  async create(@CurrentUser('id') userId: string, @Body() dto: CreateJobDto) {
-    const job = await this.jobs.create(userId, dto);
+  async create(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateJobDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    const job = await this.jobs.create(userId, dto, idempotencyKey);
     return { success: true, data: job };
   }
 
