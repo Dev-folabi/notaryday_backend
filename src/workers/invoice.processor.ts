@@ -112,7 +112,7 @@ export class InvoiceProcessor {
 
       await this.prisma.invoice.update({
         where: { id: invoiceId },
-        data: { pdf_url: pdfUrl },
+        data: { pdf_url: pdfUrl, pdf_pending: false },
       });
 
       this.logger.log(
@@ -170,6 +170,10 @@ export class InvoiceProcessor {
       this.logger.log(
         `Invoice ${invoice.invoice_number} emailed to ${invoice.recipient_email}`,
       );
+      await this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data: { email_pending: false, sent_at: new Date() },
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);

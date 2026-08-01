@@ -22,7 +22,12 @@ export const bullRedisConnection = (
       password: parsed.password || undefined,
       tls: tls ? { rejectUnauthorized: isProduction } : undefined,
       maxRetriesPerRequest: null,
-      enableOfflineQueue: false,
+      // Upstash closes idle sockets and free tiers sleep the DB — fail the
+      // connect fast instead of hanging, and probe dead sockets so reconnects
+      // are detected quickly. Commands are buffered (offline queue on) and
+      // flushed once the connection is re-established.
+      connectTimeout: 5000,
+      keepAlive: 5000,
     } as BullRootModuleOptions['redis'],
   };
 };

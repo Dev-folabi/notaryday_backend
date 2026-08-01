@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -13,6 +14,8 @@ import { JobStatus, Prisma } from '../../../generated/prisma';
 
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly userSettings: UserSettingsService,
@@ -80,15 +83,32 @@ export class InvoicesService {
 
     // Queue PDF generation + email sending. Best-effort: if Redis/queue is
     // slow or down, give up after 2s so the response is never blocked — the
-    // invoice record is already persisted.
+    // invoice record is already persisted. The add() buffers and flushes once
+    // Redis reconnects, so PDF/email still get processed. The *_pending flags
+    // are set here and cleared by the worker on success; a cron re-enqueues
+    // anything still pending, so work is never lost to a dropped job.
     const enqueue = (name: string, data: Record<string, unknown>) =>
       Promise.race([
         this.invoiceQueue.add(name, data),
         new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-      ]);
+      ]).catch((err) => {
+        this.logger.warn(
+          `Invoice queue enqueue failed for ${name} (invoice ${invoice.id}): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
 
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { pdf_pending: true },
+    });
     await enqueue('generate-pdf', { invoiceId: invoice.id, userId });
     if (recipientEmail && recipientEmail.includes('@')) {
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { email_pending: true },
+      });
       await enqueue('send-email', { invoiceId: invoice.id, userId });
     }
 
@@ -185,11 +205,22 @@ export class InvoicesService {
         data: { recipient_email: recipientEmail },
       });
     }
-    // Best-effort: never let a slow/down Redis block the response.
+    // Best-effort: never let a slow/down Redis block or fail the response.
+    // Mark pending so the retry cron re-enqueues if this add is lost.
+    await this.prisma.invoice.update({
+      where: { id },
+      data: { email_pending: true },
+    });
     await Promise.race([
       this.invoiceQueue.add('send-email', { invoiceId: id, userId }),
       new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-    ]);
+    ]).catch((err) => {
+      this.logger.warn(
+        `Invoice resend enqueue failed for ${id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    });
     await this.prisma.invoice.update({
       where: { id },
       data: { sent_at: new Date() },

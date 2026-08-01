@@ -75,12 +75,24 @@ export class EmailImportService {
       },
     });
 
-    // Queue for AI processing (body is fetched from Resend by the worker)
-    await this.queue.add(
-      'parse-email',
-      { importId: importRecord.id },
-      { priority: 1 },
-    );
+    // Queue for AI processing (body is fetched from Resend by the worker).
+    // Best-effort: the import record is already persisted, so a slow/down
+    // Redis must not fail the Resend webhook — it buffers and flushes once
+    // the connection recovers.
+    await Promise.race([
+      this.queue.add(
+        'parse-email',
+        { importId: importRecord.id },
+        { priority: 1 },
+      ),
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ]).catch((err) => {
+      this.logger.warn(
+        `Failed to enqueue email import ${importRecord.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    });
 
     return { status: 'queued', importId: importRecord.id };
   }

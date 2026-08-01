@@ -2,7 +2,6 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import Redis from 'ioredis';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -16,6 +15,7 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
 
   // Security headers
   app.use(helmet());
@@ -31,37 +31,6 @@ async function bootstrap() {
     credentials: true,
   });
   logger.log(`CORS enabled for origin: ${corsOrigin}`);
-
-  // Redis store (Upstash via ioredis)
-  const redisUrl = configService.get<string>('UPSTASH_REDIS_URL');
-  if (!redisUrl) {
-    logger.error('UPSTASH_REDIS_URL is not configured');
-    process.exit(1);
-  }
-
-  const isProduction = configService.get<string>('NODE_ENV') === 'production';
-
-  const redisClient = new Redis(redisUrl, {
-    tls: { rejectUnauthorized: isProduction },
-    lazyConnect: true,
-  });
-
-  try {
-    await redisClient.connect();
-    await redisClient.ping();
-    logger.log('Redis connected to Upstash');
-  } catch (err: any) {
-    if (isProduction) {
-      logger.error(
-        'Redis connection failed — cannot start in production without Redis',
-      );
-      process.exit(1);
-    }
-    logger.warn(
-      'Redis connection failed, continuing without redis (dev mode)',
-      err instanceof Error ? err.message : err,
-    );
-  }
 
   // Global validation pipe
   app.useGlobalPipes(

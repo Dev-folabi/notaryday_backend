@@ -450,6 +450,12 @@ model Invoice {
   payment_method_used String? // e.g. "Zelle", "Venmo", "Check" — filled on mark-paid
   pdf_url             String? // Cloudflare R2 URL of generated PDF
 
+  // Delivery state — set true when a generate-pdf / send-email job is enqueued
+  // (or lost), cleared only once the worker confirms success. A cron re-enqueues
+  // anything still pending so invoices self-heal after a Redis outage.
+  pdf_pending   Boolean @default(false)
+  email_pending Boolean @default(false)
+
   // Status
   sent_at DateTime? @db.Timestamptz
   paid_at DateTime? @db.Timestamptz

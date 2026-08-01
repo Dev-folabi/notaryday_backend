@@ -26,9 +26,21 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       commandTimeout: 5000,
     });
 
-    await this.client.connect();
-    await this.client.ping();
-    console.log('[Redis] Connected to Upstash');
+    try {
+      await this.client.connect();
+      await this.client.ping();
+      console.log('[Redis] Connected to Upstash');
+    } catch (err) {
+      // Don't crash the app when Redis is unreachable at boot — cache calls
+      // fail fast (enableOfflineQueue:false) and are guarded at every call
+      // site, and BullMQ buffers jobs until it reconnects. Only a missing URL
+      // is fatal, above.
+      console.warn(
+        `[Redis] Failed to connect at boot — cache degraded, queue jobs will buffer: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async onModuleDestroy() {
@@ -39,6 +51,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   getClient(): Redis {
     return this.client;
+  }
+
+  async ping(): Promise<string> {
+    return this.client.ping();
   }
 
   async get(key: string): Promise<string | null> {
