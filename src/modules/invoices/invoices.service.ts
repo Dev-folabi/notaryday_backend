@@ -81,12 +81,6 @@ export class InvoicesService {
       },
     });
 
-    // Queue PDF generation + email sending. Best-effort: if Redis/queue is
-    // slow or down, give up after 2s so the response is never blocked — the
-    // invoice record is already persisted. The add() buffers and flushes once
-    // Redis reconnects, so PDF/email still get processed. The *_pending flags
-    // are set here and cleared by the worker on success; a cron re-enqueues
-    // anything still pending, so work is never lost to a dropped job.
     const enqueue = (name: string, data: Record<string, unknown>) =>
       Promise.race([
         this.invoiceQueue.add(name, data),
@@ -155,6 +149,33 @@ export class InvoicesService {
         },
       },
     });
+  }
+
+  /** Invoice summary stats — mirrors the frontend statusOf logic */
+  async findStats(userId: string) {
+    const rows = await this.prisma.invoice.findMany({
+      where: { user_id: userId, deleted_at: null },
+      select: { total: true, is_paid: true, sent_at: true },
+    });
+
+    const now = Date.now();
+    const stats = { billed: 0, paid: 0, outstanding: 0, overdue: 0 };
+
+    for (const row of rows) {
+      const total = Number(row.total) || 0;
+      stats.billed += total;
+      if (row.is_paid) {
+        stats.paid += total;
+      } else {
+        stats.outstanding += total;
+        if (row.sent_at) {
+          const days = (now - new Date(row.sent_at).getTime()) / 86_400_000;
+          if (days > 30) stats.overdue += total;
+        }
+      }
+    }
+
+    return stats;
   }
 
   async findOne(userId: string, id: string) {

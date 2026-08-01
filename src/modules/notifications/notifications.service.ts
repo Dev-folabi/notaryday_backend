@@ -18,9 +18,30 @@ export class NotificationsService {
       throw new Error('RESEND_API_KEY is not configured');
     }
     this.resend = new Resend(apiKey);
-    this.fromAddress =
-      this.config.get<string>('RESEND_FROM_ADDRESS') ||
-      'Notary Day <noreply@notaryday.app>';
+    this.fromAddress = this.normalizeFromAddress(
+      this.config.get<string>('RESEND_FROM_ADDRESS'),
+    );
+  }
+
+  private normalizeFromAddress(value: string | undefined): string {
+    const fallback = 'Notary Day <noreply@notaryday.app>';
+    const cleaned = (value ?? '')
+      .trim()
+      .replace(/^['"]+|['"]+$/g, '')
+      .trim();
+    if (!cleaned) return fallback;
+
+    const match = cleaned.match(/^([^<>]*?)\s*<([^<>]+)>$/);
+    const email = (match ? match[2] : cleaned).trim();
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+
+    if (!emailValid) {
+      this.logger.warn(
+        `RESEND_FROM_ADDRESS is not a valid email address ("${cleaned}") — falling back to "${fallback}"`,
+      );
+      return fallback;
+    }
+    return match ? `${match[1].trim()} <${email}>` : email;
   }
 
   /**

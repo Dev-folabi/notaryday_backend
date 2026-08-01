@@ -9,6 +9,7 @@ import { RedisService } from '../../config/redis.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { calculateProfitability } from '../../common/utils/profitability.util';
+import { haversineMiles } from '../../common/utils/geo.util';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { JobStatus, SigningType, JobSource } from '../../../generated/prisma';
@@ -86,6 +87,30 @@ export class JobsService {
     // Geocode the address
     const geoPoint = await this.geocoding.geocode(dto.address);
 
+    // Mileage: straight-line distance from the home base to the job, rounded
+    // to 2dp. Falls back to 0 when no home base is configured.
+    let distanceMiles = 0;
+    const homeLat = Number(settings.home_base_lat);
+    const homeLng = Number(settings.home_base_lng);
+    if (
+      geoPoint &&
+      settings.home_base_lat != null &&
+      settings.home_base_lng != null &&
+      Number.isFinite(homeLat) &&
+      Number.isFinite(homeLng) &&
+      Number.isFinite(geoPoint.lat) &&
+      Number.isFinite(geoPoint.lng)
+    ) {
+      distanceMiles =
+        Math.round(
+          haversineMiles(homeLat, homeLng, geoPoint.lat, geoPoint.lng) * 100,
+        ) / 100;
+    }
+    const mileageCost =
+      distanceMiles > 0
+        ? Math.round(distanceMiles * 2 * irsRate * 100) / 100
+        : 0;
+
     // Compute signing_ends_at
     const appointmentTime = new Date(dto.appointment_time);
     const signingEndsAt = new Date(
@@ -104,11 +129,11 @@ export class JobsService {
         ? new Date(signingEndsAt.getTime() + scanbackDurationMins * 60_000)
         : null;
 
-    // Profitability (no drive distance yet — calculated by CITT or route engine)
+    // Profitability
     const profitability = calculateProfitability({
       fee: dto.fee,
       platformFee: dto.platform_fee ?? 0,
-      distanceMiles: 0,
+      distanceMiles,
       irsRatePerMile: irsRate,
       signingDurationMins,
       driveTimeMins: 0,
@@ -131,6 +156,8 @@ export class JobsService {
           source: dto.source,
           fee: dto.fee,
           platform_fee: dto.platform_fee ?? 0,
+          mileage_miles: distanceMiles > 0 ? distanceMiles : null,
+          mileage_cost: mileageCost > 0 ? mileageCost : null,
           net_earnings: profitability.netEarnings,
           effective_hourly: profitability.effectiveHourly,
           irs_rate_snapshot: irsRate,
@@ -195,13 +222,18 @@ export class JobsService {
 
   async findAll(
     userId: string,
-    filters?: { date?: string; status?: JobStatus },
+    filters?: {
+      date?: string;
+      status?: JobStatus;
+      from?: string;
+      to?: string;
+    },
   ) {
     const where: {
       user_id: string;
       deleted_at: null;
       status?: JobStatus;
-      appointment_time?: { gte: Date; lt: Date };
+      appointment_time?: { gte?: Date; lt?: Date };
     } = {
       user_id: userId,
       deleted_at: null,
@@ -214,6 +246,11 @@ export class JobsService {
       const next = new Date(day);
       next.setDate(next.getDate() + 1);
       where.appointment_time = { gte: day, lt: next };
+    } else if (filters?.from || filters?.to) {
+      const range: { gte?: Date; lt?: Date } = {};
+      if (filters.from) range.gte = new Date(filters.from);
+      if (filters.to) range.lt = new Date(filters.to);
+      where.appointment_time = range;
     }
 
     return this.prisma.job.findMany({

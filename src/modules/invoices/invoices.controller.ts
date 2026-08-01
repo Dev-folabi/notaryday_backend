@@ -75,6 +75,15 @@ export class InvoicesController {
     };
   }
 
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Invoice summary stats (billed, paid, outstanding, overdue)',
+  })
+  @ApiResponse({ status: 200, description: 'Invoice summary stats' })
+  async stats(@CurrentUser('id') userId: string) {
+    return { success: true, data: await this.invoices.findStats(userId) };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single invoice by ID' })
   @ApiParam({ name: 'id', description: 'Invoice UUID' })

@@ -61,13 +61,27 @@ export class JobsController {
     enum: JobStatus,
     description: 'Filter by status',
   })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    example: '2025-06-01',
+    description: 'Range start (YYYY-MM-DD, inclusive)',
+  })
+  @ApiQuery({
+    name: 'to',
+    required: false,
+    example: '2025-06-08',
+    description: 'Range end (YYYY-MM-DD, exclusive)',
+  })
   @ApiResponse({ status: 200, description: 'Array of jobs' })
   async findAll(
     @CurrentUser('id') userId: string,
     @Query('date') date?: string,
     @Query('status') status?: JobStatus,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
-    const jobs = await this.jobs.findAll(userId, { date, status });
+    const jobs = await this.jobs.findAll(userId, { date, status, from, to });
     return { success: true, data: jobs, meta: { count: jobs.length } };
   }
 
