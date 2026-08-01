@@ -177,7 +177,7 @@ export class CittService {
     );
     if (!route) {
       return this.decline(
-        'Could not calculate drive time. Please try again.',
+        'Drive time check unavailable — please try again shortly.',
         0,
         0,
         dto.fee,
@@ -385,11 +385,9 @@ export class CittService {
         errorMessage = error.message;
       }
       this.logger.error(`[CITT] ORS error: ${errorMessage}`);
-      // Return a safe fallback instead of crashing
-      return {
-        distanceMiles: 0,
-        driveTimeMins: 0,
-      };
+      // ORS is down/failing: return null so the caller declines with a clear
+      // message instead of showing a verdict with zero drive/mileage.
+      return null;
     }
   }
 

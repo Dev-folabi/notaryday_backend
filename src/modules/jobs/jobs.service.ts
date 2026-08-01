@@ -12,7 +12,12 @@ import { calculateProfitability } from '../../common/utils/profitability.util';
 import { haversineMiles } from '../../common/utils/geo.util';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
-import { JobStatus, SigningType, JobSource } from '../../../generated/prisma';
+import {
+  JobStatus,
+  SigningType,
+  JobSource,
+  Prisma,
+} from '../../../generated/prisma';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import {
@@ -89,27 +94,11 @@ export class JobsService {
 
     // Mileage: straight-line distance from the home base to the job, rounded
     // to 2dp. Falls back to 0 when no home base is configured.
-    let distanceMiles = 0;
-    const homeLat = Number(settings.home_base_lat);
-    const homeLng = Number(settings.home_base_lng);
-    if (
-      geoPoint &&
-      settings.home_base_lat != null &&
-      settings.home_base_lng != null &&
-      Number.isFinite(homeLat) &&
-      Number.isFinite(homeLng) &&
-      Number.isFinite(geoPoint.lat) &&
-      Number.isFinite(geoPoint.lng)
-    ) {
-      distanceMiles =
-        Math.round(
-          haversineMiles(homeLat, homeLng, geoPoint.lat, geoPoint.lng) * 100,
-        ) / 100;
-    }
-    const mileageCost =
-      distanceMiles > 0
-        ? Math.round(distanceMiles * 2 * irsRate * 100) / 100
-        : 0;
+    const { distanceMiles, mileageCost } = this.computeMileage(
+      settings,
+      geoPoint,
+      irsRate,
+    );
 
     // Compute signing_ends_at
     const appointmentTime = new Date(dto.appointment_time);
@@ -138,6 +127,13 @@ export class JobsService {
       signingDurationMins,
       driveTimeMins: 0,
     });
+
+    // Resolve initial status: explicit DTO wins, otherwise default by source
+    const resolvedStatus =
+      dto.status ??
+      (dto.source === JobSource.MANUAL
+        ? JobStatus.CONFIRMED
+        : JobStatus.PENDING);
 
     let job: Awaited<ReturnType<typeof this.prisma.job.create>>;
     try {
@@ -168,11 +164,9 @@ export class JobsService {
           signer_count: dto.signer_count ?? 1,
           notes: dto.notes,
           idempotency_key: idempotencyKey,
-          status:
-            dto.source === JobSource.MANUAL
-              ? JobStatus.CONFIRMED
-              : JobStatus.PENDING,
-          confirmed_at: dto.source === JobSource.MANUAL ? new Date() : null,
+          status: resolvedStatus,
+          confirmed_at:
+            resolvedStatus === JobStatus.CONFIRMED ? new Date() : null,
         },
       });
     } catch (err: any) {
@@ -276,9 +270,11 @@ export class JobsService {
     const job = await this.findOne(userId, jobId);
 
     // Re-geocode if address changed
-    let lat = Number(job.lat);
-    let lng = Number(job.lng);
-    if (dto.address && dto.address !== job.address) {
+    const addressChanged =
+      dto.address !== undefined && dto.address !== job.address;
+    let lat: number | null = job.lat != null ? Number(job.lat) : null;
+    let lng: number | null = job.lng != null ? Number(job.lng) : null;
+    if (dto.address !== undefined && dto.address !== job.address) {
       const geo = await this.geocoding.geocode(dto.address);
       if (geo) {
         lat = geo.lat;
@@ -288,7 +284,10 @@ export class JobsService {
 
     // If signing type or duration changes, recompute signing_ends_at
     const signingDurationMins =
-      dto.signing_duration_mins ?? job.signing_duration_mins;
+      dto.signing_duration_mins ??
+      (dto.signing_type !== undefined && dto.signing_type !== job.signing_type
+        ? await this.getSigningDuration(userId, dto.signing_type)
+        : job.signing_duration_mins);
     const appointmentTime = dto.appointment_time
       ? new Date(dto.appointment_time)
       : job.appointment_time;
@@ -296,39 +295,96 @@ export class JobsService {
       appointmentTime.getTime() + signingDurationMins * 60_000,
     );
 
+    // Recompute scanback window when its duration/type changes
+    const scanbackDurationMins =
+      dto.scanback_duration_mins ??
+      (dto.signing_type !== undefined && dto.signing_type !== job.signing_type
+        ? await this.getScanbackDuration(userId, dto.signing_type)
+        : job.scanback_duration_mins);
+    const scanbackEndsAt =
+      scanbackDurationMins > 0
+        ? new Date(signingEndsAt.getTime() + scanbackDurationMins * 60_000)
+        : null;
+
+    // Any of these fields drive profitability/mileage → full recompute
+    const calcChanged =
+      addressChanged ||
+      dto.fee !== undefined ||
+      dto.platform_fee !== undefined ||
+      dto.signing_type !== undefined ||
+      dto.signing_duration_mins !== undefined ||
+      dto.scanback_duration_mins !== undefined;
+
+    const data: Prisma.JobUpdateInput = {
+      ...(dto.address !== undefined && { address: dto.address, lat, lng }),
+      ...(dto.appointment_time !== undefined && {
+        appointment_time: appointmentTime,
+      }),
+      ...(dto.fee !== undefined && { fee: dto.fee }),
+      ...(dto.platform_fee !== undefined && {
+        platform_fee: dto.platform_fee,
+      }),
+      ...(dto.signing_type !== undefined && {
+        signing_type: dto.signing_type,
+      }),
+      ...(dto.signing_duration_mins !== undefined && {
+        signing_duration_mins: signingDurationMins,
+      }),
+      signing_ends_at: signingEndsAt,
+      ...(scanbackDurationMins !== (job.scanback_duration_mins ?? 0) && {
+        scanback_duration_mins: scanbackDurationMins,
+        scanback_ends_at: scanbackEndsAt,
+      }),
+      ...(dto.client_name !== undefined && { client_name: dto.client_name }),
+      ...(dto.client_email !== undefined && {
+        client_email: dto.client_email,
+      }),
+      ...(dto.client_phone !== undefined && {
+        client_phone: dto.client_phone,
+      }),
+      ...(dto.platform_name !== undefined && {
+        platform_name: dto.platform_name,
+      }),
+      ...(dto.notes !== undefined && { notes: dto.notes }),
+      ...(dto.signer_count !== undefined && {
+        signer_count: dto.signer_count,
+      }),
+    };
+
+    if (calcChanged) {
+      const settings = await this.userSettings.get(userId);
+      const irsRate = Number(settings.irs_rate_per_mile);
+      const geoPoint =
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        lat != null &&
+        lng != null
+          ? { lat, lng }
+          : null;
+      const { distanceMiles, mileageCost } = this.computeMileage(
+        settings,
+        geoPoint,
+        irsRate,
+      );
+      const profitability = calculateProfitability({
+        fee: dto.fee ?? job.fee,
+        platformFee: dto.platform_fee ?? job.platform_fee ?? 0,
+        distanceMiles,
+        irsRatePerMile: irsRate,
+        signingDurationMins,
+        driveTimeMins: 0,
+        scanbackDurationMins,
+      });
+      data.mileage_miles = distanceMiles > 0 ? distanceMiles : null;
+      data.mileage_cost = mileageCost > 0 ? mileageCost : null;
+      data.net_earnings = profitability.netEarnings;
+      data.effective_hourly = profitability.effectiveHourly;
+      data.irs_rate_snapshot = irsRate;
+    }
+
     const updated = await this.prisma.job.update({
       where: { id: jobId },
-      data: {
-        ...(dto.address !== undefined && { address: dto.address, lat, lng }),
-        ...(dto.appointment_time !== undefined && {
-          appointment_time: appointmentTime,
-        }),
-        ...(dto.fee !== undefined && { fee: dto.fee }),
-        ...(dto.platform_fee !== undefined && {
-          platform_fee: dto.platform_fee,
-        }),
-        ...(dto.signing_type !== undefined && {
-          signing_type: dto.signing_type,
-        }),
-        ...(dto.signing_duration_mins !== undefined && {
-          signing_duration_mins: signingDurationMins,
-        }),
-        signing_ends_at: signingEndsAt,
-        ...(dto.client_name !== undefined && { client_name: dto.client_name }),
-        ...(dto.client_email !== undefined && {
-          client_email: dto.client_email,
-        }),
-        ...(dto.client_phone !== undefined && {
-          client_phone: dto.client_phone,
-        }),
-        ...(dto.platform_name !== undefined && {
-          platform_name: dto.platform_name,
-        }),
-        ...(dto.notes !== undefined && { notes: dto.notes }),
-        ...(dto.signer_count !== undefined && {
-          signer_count: dto.signer_count,
-        }),
-      },
+      data,
     });
 
     // Apply an optional status transition (validated & timestamped)
@@ -482,6 +538,37 @@ export class JobsService {
   }
 
   // Helpers
+
+  /** Straight-line (haversine) distance from the home base to a geocoded point,
+   *  plus the round-trip mileage cost. Returns 0/0 when home base is missing. */
+  private computeMileage(
+    settings: Awaited<ReturnType<UserSettingsService['get']>>,
+    geoPoint: { lat: number; lng: number } | null,
+    irsRate: number,
+  ): { distanceMiles: number; mileageCost: number } {
+    let distanceMiles = 0;
+    const homeLat = Number(settings.home_base_lat);
+    const homeLng = Number(settings.home_base_lng);
+    if (
+      geoPoint &&
+      settings.home_base_lat != null &&
+      settings.home_base_lng != null &&
+      Number.isFinite(homeLat) &&
+      Number.isFinite(homeLng) &&
+      Number.isFinite(geoPoint.lat) &&
+      Number.isFinite(geoPoint.lng)
+    ) {
+      distanceMiles =
+        Math.round(
+          haversineMiles(homeLat, homeLng, geoPoint.lat, geoPoint.lng) * 100,
+        ) / 100;
+    }
+    const mileageCost =
+      distanceMiles > 0
+        ? Math.round(distanceMiles * 2 * irsRate * 100) / 100
+        : 0;
+    return { distanceMiles, mileageCost };
+  }
 
   private async getSigningDuration(
     userId: string,

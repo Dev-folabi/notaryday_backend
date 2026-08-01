@@ -10,7 +10,11 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SigningType, JobSource } from '../../../../generated/prisma';
+import {
+  SigningType,
+  JobSource,
+  JobStatus,
+} from '../../../../generated/prisma';
 
 export class CreateJobDto {
   @ApiProperty({ example: '123 Main St, Austin, TX 78701' })
@@ -74,6 +78,14 @@ export class CreateJobDto {
   @IsString()
   @IsOptional()
   client_name?: string;
+
+  @ApiPropertyOptional({
+    enum: JobStatus,
+    description: 'Initial status. Defaults to CONFIRMED for manual jobs',
+  })
+  @IsEnum(JobStatus)
+  @IsOptional()
+  status?: JobStatus;
 
   @ApiPropertyOptional({ example: 'client@example.com' })
   @IsString()
