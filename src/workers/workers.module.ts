@@ -5,7 +5,6 @@ import { InvoiceProcessor } from './invoice.processor';
 import { NotificationProcessor } from './notification.processor';
 import { CalendarSyncProcessor } from './calendar-sync.processor';
 import { NotificationCronService } from './notification-cron.service';
-import { InvoiceRetryService } from './invoice-retry.service';
 import { NotificationsModule } from '../modules/notifications/notifications.module';
 import {
   QUEUE_EMAIL_IMPORT,
@@ -30,7 +29,6 @@ import {
     NotificationProcessor,
     CalendarSyncProcessor,
     NotificationCronService,
-    InvoiceRetryService,
   ],
 })
 export class WorkersModule {}

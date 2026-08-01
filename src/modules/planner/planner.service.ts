@@ -129,6 +129,10 @@ export class PlannerService {
       scanback_ends_at: j.scanback_ends_at,
     }));
 
+    // Lazily compute + persist any missing drive legs in schedule order, so the
+    // day always carries real drive times without requiring POST /planner/optimise.
+    await this.populateDriveTimes(userId, plannerJobs);
+
     // Build scanback blocks
     const scanback_blocks: ScanbackBlock[] = plannerJobs
       .filter((j) => j.scanback_duration_mins > 0 && j.signing_ends_at)
@@ -184,6 +188,73 @@ export class PlannerService {
       optimised,
       conflicts,
     };
+  }
+
+  // Lazily compute + persist drive legs for any jobs missing them, walking the
+  // day in appointment order (home base → first job → next job → ...).
+  private async populateDriveTimes(
+    userId: string,
+    jobs: PlannerJob[],
+  ): Promise<void> {
+    const missing = jobs.filter((j) => j.drive_from_prev_mins == null);
+    if (missing.length === 0) return;
+
+    const settings = await this.userSettings.get(userId);
+    let originLat = Number(settings.home_base_lat);
+    let originLng = Number(settings.home_base_lng);
+
+    const sorted = [...jobs].sort(
+      (a, b) => a.appointment_time.getTime() - b.appointment_time.getTime(),
+    );
+
+    for (const job of sorted) {
+      if (job.drive_from_prev_mins != null) {
+        originLat = job.lat;
+        originLng = job.lng;
+        continue;
+      }
+
+      let driveMins = 0;
+      let driveMiles = 0;
+      let computed = false;
+      if (originLat && originLng) {
+        const route = await this.ors.getRoute(
+          originLat,
+          originLng,
+          job.lat,
+          job.lng,
+        );
+        if (route) {
+          driveMins = route.driveTimeMins;
+          driveMiles = route.distanceMiles;
+          computed = true;
+        }
+      }
+      // No home base or ORS unavailable → leave null so we retry next call
+      // instead of persisting a fake 0 that would never recompute.
+      if (!computed) continue;
+
+      try {
+        await this.prisma.job.update({
+          where: { id: job.id },
+          data: {
+            drive_from_prev_mins: driveMins,
+            drive_from_prev_miles: driveMiles,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to persist drive time for job ${job.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+
+      job.drive_from_prev_mins = driveMins;
+      job.drive_from_prev_miles = driveMiles;
+      originLat = job.lat;
+      originLng = job.lng;
+    }
   }
 
   // POST /planner/optimise

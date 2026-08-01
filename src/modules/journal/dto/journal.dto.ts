@@ -7,6 +7,7 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PartialType } from '@nestjs/mapped-types';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateJournalEntryDto {
@@ -27,6 +28,22 @@ export class CreateJournalEntryDto {
   @ApiProperty({ example: 'John Doe' })
   @IsString()
   signer_name: string;
+
+  @ApiPropertyOptional({
+    example: 'LOAN_REFI',
+    description: 'Signing type the entry belongs to',
+  })
+  @IsString()
+  @IsOptional()
+  signing_type?: string;
+
+  @ApiPropertyOptional({
+    example: '14:00',
+    description: 'Time of the notarial act (HH:mm)',
+  })
+  @IsString()
+  @IsOptional()
+  act_time?: string;
 
   @ApiPropertyOptional({ example: 'Drivers License' })
   @IsString()
@@ -69,3 +86,5 @@ export class CreateJournalEntryDto {
   @MaxLength(1000)
   notes?: string;
 }
+
+export class UpdateJournalEntryDto extends PartialType(CreateJournalEntryDto) {}

@@ -6,6 +6,7 @@ import { RedisService } from '../../config/redis.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { JournalService } from '../journal/journal.service';
 import {
   QUEUE_CALENDAR_SYNC,
   QUEUE_NOTIFICATION,
@@ -23,6 +24,10 @@ describe('JobsService', () => {
         { provide: GeocodingService, useValue: { geocode: jest.fn() } },
         { provide: UserSettingsService, useValue: { get: jest.fn() } },
         { provide: NotificationsService, useValue: {} },
+        {
+          provide: JournalService,
+          useValue: { createForCompletedJob: jest.fn() },
+        },
         {
           provide: getQueueToken(QUEUE_CALENDAR_SYNC),
           useValue: { add: jest.fn() },

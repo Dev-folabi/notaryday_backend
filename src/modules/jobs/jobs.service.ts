@@ -25,6 +25,7 @@ import {
   QUEUE_NOTIFICATION,
 } from '../../queues/queue.constants';
 import { NotificationsService } from '../notifications/notifications.service';
+import { JournalService } from '../journal/journal.service';
 
 // Signing types that mandate scanback
 const SCANBACK_TYPES = new Set<SigningType>([
@@ -59,6 +60,7 @@ export class JobsService {
     private readonly geocoding: GeocodingService,
     private readonly userSettings: UserSettingsService,
     private readonly notifications: NotificationsService,
+    private readonly journal: JournalService,
     @InjectQueue(QUEUE_CALENDAR_SYNC)
     private readonly calendarSyncQueue: Queue,
     @InjectQueue(QUEUE_NOTIFICATION)
@@ -455,6 +457,18 @@ export class JobsService {
       where: { id: jobId },
       data: { status: newStatus, ...timestamps },
     });
+
+    // Auto-create a notarial journal entry once a job is fully complete.
+    if (newStatus === JobStatus.COMPLETE) {
+      try {
+        await this.journal.createForCompletedJob(userId, job);
+      } catch (err) {
+        this.logger.error(
+          `Failed to auto-create journal entry for completed job ${job.id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
 
     // Dispatch client ETA to next job when signing done
     if (

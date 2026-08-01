@@ -506,6 +506,8 @@ model JournalEntry {
 
   entry_date       DateTime @db.Date
   act_type         String // "Acknowledgment", "Jurat", "Oath", etc.
+  signing_type     String? // "LOAN_REFI", "GENERAL", etc.
+  act_time         String? // "14:00" — time of the notarial act
   signer_name      String
   signer_id_type   String? // "Driver's License", "Passport"
   signer_id_number String? // Last 4 digits only for privacy

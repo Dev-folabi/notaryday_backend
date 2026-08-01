@@ -3,6 +3,7 @@ import { JobsService } from './jobs.service';
 import { JobsController } from './jobs.controller';
 import { GeocodingModule } from '../geocoding/geocoding.module';
 import { UsersModule } from '../users/users.module';
+import { JournalModule } from '../journal/journal.module';
 import { BullModule } from '@nestjs/bull';
 import {
   QUEUE_CALENDAR_SYNC,
@@ -13,6 +14,7 @@ import {
   imports: [
     GeocodingModule,
     UsersModule,
+    JournalModule,
     BullModule.registerQueue({
       name: QUEUE_CALENDAR_SYNC,
     }),

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -21,7 +22,10 @@ import {
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JournalService } from './journal.service';
-import { CreateJournalEntryDto } from './dto/journal.dto';
+import {
+  CreateJournalEntryDto,
+  UpdateJournalEntryDto,
+} from './dto/journal.dto';
 
 @ApiTags('Journal')
 @ApiBearerAuth()
@@ -69,6 +73,19 @@ export class JournalController {
   @ApiResponse({ status: 404, description: 'Entry not found' })
   async findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return { success: true, data: await this.journal.findOne(userId, id) };
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a journal entry' })
+  @ApiParam({ name: 'id', description: 'Journal entry UUID' })
+  @ApiResponse({ status: 200, description: 'Journal entry updated' })
+  @ApiResponse({ status: 404, description: 'Entry not found' })
+  async update(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateJournalEntryDto,
+  ) {
+    return { success: true, data: await this.journal.update(userId, id, dto) };
   }
 
   @Delete(':id')
