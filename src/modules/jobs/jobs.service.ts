@@ -404,8 +404,10 @@ export class JobsService {
     const allowed = TRANSITIONS[job.status] ?? [];
 
     if (!allowed.includes(newStatus)) {
+      const allowedMsg =
+        allowed.length > 0 ? ` Allowed: [${allowed.join(', ')}]` : '';
       throw new BadRequestException(
-        `Cannot transition from ${job.status} to ${newStatus}. Allowed: [${allowed.join(', ')}]`,
+        `Cannot transition from ${job.status} to ${newStatus}.${allowedMsg}`,
       );
     }
 
