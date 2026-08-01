@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsDateString,
@@ -16,6 +17,7 @@ export class CreateJournalEntryDto {
     description: 'Date of the notarial act',
   })
   @IsDateString()
+  @IsNotEmpty()
   entry_date: string;
 
   @ApiProperty({
@@ -23,10 +25,14 @@ export class CreateJournalEntryDto {
     description: 'Type of notarial act performed',
   })
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
   act_type: string;
 
   @ApiProperty({ example: 'John Doe' })
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
   signer_name: string;
 
   @ApiPropertyOptional({
@@ -35,6 +41,7 @@ export class CreateJournalEntryDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   signing_type?: string;
 
   @ApiPropertyOptional({
@@ -43,26 +50,31 @@ export class CreateJournalEntryDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(10)
   act_time?: string;
 
   @ApiPropertyOptional({ example: 'Drivers License' })
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   signer_id_type?: string;
 
   @ApiPropertyOptional({ example: 'DL-123456789' })
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   signer_id_number?: string;
 
   @ApiPropertyOptional({ example: 'Deed of Trust' })
   @IsString()
   @IsOptional()
+  @MaxLength(300)
   document_type?: string;
 
   @ApiPropertyOptional({ example: '123 Main St, Austin, TX 78701' })
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   address?: string;
 
   @ApiPropertyOptional({
@@ -78,6 +90,7 @@ export class CreateJournalEntryDto {
   @ApiPropertyOptional({ description: 'Associated job UUID' })
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   job_id?: string;
 
   @ApiPropertyOptional({ example: 'Signer appeared in person with valid ID' })

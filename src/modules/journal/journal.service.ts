@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { CreateJournalEntryDto } from './dto/journal.dto';
 import { UpdateJournalEntryDto } from './dto/journal.dto';
+import { sanitizeStrings, sanitizeText } from '../../common/utils/sanitize.util';
 import { Job } from '../../../generated/prisma';
 
 @Injectable()
@@ -47,23 +48,25 @@ export class JournalService {
   }
 
   async create(userId: string, dto: CreateJournalEntryDto) {
+    const clean = sanitizeStrings(dto, 1000);
     return this.prisma.journalEntry.create({
       data: {
         user_id: userId,
-        ...dto,
-        entry_date: new Date(dto.entry_date),
-        fee_charged: dto.fee_charged,
+        ...clean,
+        entry_date: new Date(clean.entry_date),
+        fee_charged: clean.fee_charged,
       },
     });
   }
 
   async update(userId: string, id: string, dto: UpdateJournalEntryDto) {
     await this.findOne(userId, id);
+    const clean = sanitizeStrings(dto, 1000);
     return this.prisma.journalEntry.update({
       where: { id },
       data: {
-        ...dto,
-        entry_date: dto.entry_date ? new Date(dto.entry_date) : undefined,
+        ...clean,
+        entry_date: clean.entry_date ? new Date(clean.entry_date) : undefined,
       },
     });
   }
@@ -79,11 +82,14 @@ export class JournalService {
       if (filters.to) where.entry_date.lte = new Date(filters.to);
     }
     if (filters?.search) {
-      where.OR = [
-        { signer_name: { contains: filters.search, mode: 'insensitive' } },
-        { document_type: { contains: filters.search, mode: 'insensitive' } },
-        { act_type: { contains: filters.search, mode: 'insensitive' } },
-      ];
+      const search = sanitizeText(filters.search, 200);
+      if (search) {
+        where.OR = [
+          { signer_name: { contains: search, mode: 'insensitive' } },
+          { document_type: { contains: search, mode: 'insensitive' } },
+          { act_type: { contains: search, mode: 'insensitive' } },
+        ];
+      }
     }
     return this.prisma.journalEntry.findMany({
       where,
