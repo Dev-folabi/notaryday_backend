@@ -65,14 +65,26 @@ export interface GapCandidate {
   gap_start: Date;
   gap_end: Date;
   gap_mins: number;
-  candidates: Array<{
-    id: string;
-    address: string;
-    fee: number;
-    net_earnings: number;
-    signing_type: SigningType;
-    appointment_time: Date;
-  }>;
+  prev_job_id: string;
+  next_job_id: string;
+  prev_job_label: string;
+  next_job_label: string;
+  candidates: GapCandidateJob[];
+}
+
+export interface GapCandidateJob {
+  id: string;
+  address: string;
+  fee: number;
+  net_earnings: number;
+  signing_type: SigningType;
+  signing_duration_mins: number;
+  scanback_duration_mins: number;
+  platform_name: string | null;
+  client_name: string | null;
+  appointment_time: Date;
+  miles_from: number | null;
+  miles_from_label: string | null;
 }
 
 @Injectable()
@@ -341,19 +353,23 @@ export class PlannerService {
   // GET /planner/gaps
   async findGaps(userId: string, date: string): Promise<GapCandidate[]> {
     const plan = await this.getToday(userId, date);
-    if (plan.jobs.length < 1) return [];
+    if (plan.jobs.length < 2) return [];
+
+    const settings = await this.userSettings.get(userId);
+    const irsRate = Number(settings.irs_rate_per_mile ?? 0.72);
 
     // Get pending jobs for this user (any date)
     const pendingJobs = await this.prisma.job.findMany({
       where: { user_id: userId, deleted_at: null, status: JobStatus.PENDING },
       orderBy: { fee: 'desc' },
-      take: 20,
+      take: 50,
     });
 
     if (pendingJobs.length === 0) return [];
 
     const gaps: GapCandidate[] = [];
-    const BUFFER = 10; // minutes
+    const BUFFER = 10; // minutes of breathing room around the slot
+    const DRIVE_BUFFER = 20; // fallback drive minutes when routing is unavailable
 
     for (let i = 0; i < plan.jobs.length - 1; i++) {
       const curr = plan.jobs[i];
@@ -362,38 +378,87 @@ export class PlannerService {
       const currEnds =
         curr.scanback_ends_at ?? curr.signing_ends_at ?? curr.appointment_time;
       const gapStartMs = currEnds.getTime() + BUFFER * 60_000;
-      const driveToNext = nextJob.drive_from_prev_mins ?? 15;
+      const driveToNext = nextJob.drive_from_prev_mins ?? DRIVE_BUFFER;
       const gapEndMs =
         nextJob.appointment_time.getTime() - (driveToNext + BUFFER) * 60_000;
       const gapMins = (gapEndMs - gapStartMs) / 60_000;
 
       if (gapMins < 30) continue; // too short
 
-      // Find pending jobs that could fit
-      const candidates = pendingJobs
-        .filter((p) => {
-          const totalNeeded =
-            (p.signing_duration_mins ?? 45) +
-            (p.scanback_duration_mins ?? 0) +
-            20; // +20 for drive buffer
-          return totalNeeded <= gapMins;
-        })
-        .slice(0, 3)
-        .map((p) => ({
+      // Origin for the gap leg is where the notary is when the gap starts:
+      // the end of the preceding job.
+      const fromLat = curr.lat ? Number(curr.lat) : null;
+      const fromLng = curr.lng ? Number(curr.lng) : null;
+      const prevLabel = `Job ${i + 1}`;
+      const nextLabel = `Job ${i + 2}`;
+
+      // Find pending jobs that could fit the window, measuring real drive
+      // time/distance from the preceding job and re-estimating net earnings
+      // for the extra miles.
+      const matched: GapCandidateJob[] = [];
+      for (const p of pendingJobs) {
+        const signingMins = p.signing_duration_mins ?? 45;
+        const scanbackMins = p.scanback_duration_mins ?? 0;
+        const pLat = p.lat != null ? Number(p.lat) : null;
+        const pLng = p.lng != null ? Number(p.lng) : null;
+
+        let driveMins = DRIVE_BUFFER;
+        let milesFrom: number | null = null;
+        let milesFromLabel: string | null = null;
+        if (
+          fromLat != null &&
+          fromLng != null &&
+          pLat != null &&
+          pLng != null
+        ) {
+          const route = await this.ors.getRoute(fromLat, fromLng, pLat, pLng);
+          if (route) {
+            driveMins = route.driveTimeMins;
+            milesFrom = route.distanceMiles;
+            milesFromLabel = prevLabel;
+          }
+        }
+
+        const totalNeeded = driveMins + signingMins + scanbackMins + BUFFER;
+        if (totalNeeded > gapMins) continue;
+
+        const fee = Number(p.fee ?? 0);
+        const platformFee = Number(p.platform_fee ?? 0);
+        const netEarnings =
+          milesFrom != null
+            ? Math.round((fee - milesFrom * 2 * irsRate - platformFee) * 100) /
+              100
+            : Number(p.net_earnings ?? fee);
+
+        matched.push({
           id: p.id,
           address: p.address,
-          fee: Number(p.fee),
-          net_earnings: Number(p.net_earnings),
+          fee,
+          net_earnings: netEarnings,
           signing_type: p.signing_type,
+          signing_duration_mins: signingMins,
+          scanback_duration_mins: scanbackMins,
+          platform_name: p.platform_name,
+          client_name: p.client_name,
           appointment_time: p.appointment_time,
-        }));
+          miles_from: milesFrom,
+          miles_from_label: milesFromLabel,
+        });
+      }
 
-      if (candidates.length > 0) {
+      // Best fit first: highest estimated net after gap-leg mileage
+      matched.sort((a, b) => b.net_earnings - a.net_earnings);
+
+      if (matched.length > 0) {
         gaps.push({
           gap_start: new Date(gapStartMs),
           gap_end: new Date(gapEndMs),
           gap_mins: Math.floor(gapMins),
-          candidates,
+          prev_job_id: curr.id,
+          next_job_id: nextJob.id,
+          prev_job_label: prevLabel,
+          next_job_label: nextLabel,
+          candidates: matched.slice(0, 3),
         });
       }
     }

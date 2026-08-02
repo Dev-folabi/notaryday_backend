@@ -73,7 +73,7 @@ describe('JobImportService', () => {
             user_id: 'user-1',
             import_type: ImportType.EMAIL,
             status: ImportStatus.QUEUED,
-          }),
+          }) as object,
         }),
       );
       expect(queue.add).toHaveBeenCalledWith(
@@ -109,7 +109,7 @@ describe('JobImportService', () => {
             import_type: ImportType.SCREENSHOT,
             file_mimetype: 'image/png',
             status: ImportStatus.QUEUED,
-          }),
+          }) as object,
         }),
       );
       expect(queue.add).toHaveBeenCalledWith(

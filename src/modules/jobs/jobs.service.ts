@@ -10,6 +10,7 @@ import { GeocodingService } from '../geocoding/geocoding.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { calculateProfitability } from '../../common/utils/profitability.util';
 import { haversineMiles } from '../../common/utils/geo.util';
+import { OrsService } from '../../common/services/ors.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import {
@@ -61,6 +62,7 @@ export class JobsService {
     private readonly userSettings: UserSettingsService,
     private readonly notifications: NotificationsService,
     private readonly journal: JournalService,
+    private readonly ors: OrsService,
     @InjectQueue(QUEUE_CALENDAR_SYNC)
     private readonly calendarSyncQueue: Queue,
     @InjectQueue(QUEUE_NOTIFICATION)
@@ -99,13 +101,11 @@ export class JobsService {
     // Geocode the address
     const geoPoint = await this.geocoding.geocode(dto.address);
 
-    // Mileage: straight-line distance from the home base to the job, rounded
-    // to 2dp. Falls back to 0 when no home base is configured.
-    const { distanceMiles, mileageCost } = this.computeMileage(
-      settings,
-      geoPoint,
-      irsRate,
-    );
+    // Mileage: real driving distance from the home base to the job (same
+    // source CITT uses), with a straight-line fallback when ORS is
+    // unavailable so the job can still be created.
+    const { distanceMiles, mileageCost, driveTimeMins } =
+      await this.computeMileage(settings, geoPoint, irsRate);
 
     // Compute signing_ends_at
     const appointmentTime = new Date(dto.appointment_time);
@@ -132,7 +132,7 @@ export class JobsService {
       distanceMiles,
       irsRatePerMile: irsRate,
       signingDurationMins,
-      driveTimeMins: 0,
+      driveTimeMins,
     });
 
     // Resolve initial status: explicit DTO wins, otherwise default by source
@@ -177,13 +177,17 @@ export class JobsService {
             resolvedStatus === JobStatus.CONFIRMED ? new Date() : null,
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       // Unique constraint on idempotency_key: a concurrent retry with the
       // same key already created the job — return it instead of failing.
+      const prismaError = err as {
+        code?: string;
+        meta?: { target?: string[] };
+      };
       if (
         idempotencyKey &&
-        err?.code === 'P2002' &&
-        err?.meta?.target?.includes('idempotency_key')
+        prismaError.code === 'P2002' &&
+        prismaError.meta?.target?.includes('idempotency_key')
       ) {
         const existing = await this.prisma.job.findFirst({
           where: { idempotency_key: idempotencyKey, user_id: userId },
@@ -369,18 +373,15 @@ export class JobsService {
         lng != null
           ? { lat, lng }
           : null;
-      const { distanceMiles, mileageCost } = this.computeMileage(
-        settings,
-        geoPoint,
-        irsRate,
-      );
+      const { distanceMiles, mileageCost, driveTimeMins } =
+        await this.computeMileage(settings, geoPoint, irsRate);
       const profitability = calculateProfitability({
         fee: dto.fee ?? job.fee,
         platformFee: dto.platform_fee ?? job.platform_fee ?? 0,
         distanceMiles,
         irsRatePerMile: irsRate,
         signingDurationMins,
-        driveTimeMins: 0,
+        driveTimeMins,
         scanbackDurationMins,
       });
       data.mileage_miles = distanceMiles > 0 ? distanceMiles : null;
@@ -561,35 +562,63 @@ export class JobsService {
 
   // Helpers
 
-  /** Straight-line (haversine) distance from the home base to a geocoded point,
-   *  plus the round-trip mileage cost. Returns 0/0 when home base is missing. */
-  private computeMileage(
+  /**
+   * Driving distance/time from the home base to a geocoded point, using the
+   * same ORS source as CITT (real road distance). Falls back to a straight-line
+   * (haversine) estimate — with zero drive time — when ORS is unavailable or
+   * no home base / geo point is set, so jobs can still be created.
+   */
+  private async computeMileage(
     settings: Awaited<ReturnType<UserSettingsService['get']>>,
     geoPoint: { lat: number; lng: number } | null,
     irsRate: number,
-  ): { distanceMiles: number; mileageCost: number } {
-    let distanceMiles = 0;
+  ): Promise<{
+    distanceMiles: number;
+    mileageCost: number;
+    driveTimeMins: number;
+  }> {
     const homeLat = Number(settings.home_base_lat);
     const homeLng = Number(settings.home_base_lng);
-    if (
-      geoPoint &&
+    const hasHome =
       settings.home_base_lat != null &&
       settings.home_base_lng != null &&
       Number.isFinite(homeLat) &&
-      Number.isFinite(homeLng) &&
-      Number.isFinite(geoPoint.lat) &&
-      Number.isFinite(geoPoint.lng)
+      Number.isFinite(homeLng);
+
+    if (
+      !geoPoint ||
+      !hasHome ||
+      !Number.isFinite(geoPoint.lat) ||
+      !Number.isFinite(geoPoint.lng)
     ) {
+      return { distanceMiles: 0, mileageCost: 0, driveTimeMins: 0 };
+    }
+
+    let distanceMiles: number;
+    let driveTimeMins: number;
+
+    const route = await this.ors.getRoute(
+      homeLat,
+      homeLng,
+      geoPoint.lat,
+      geoPoint.lng,
+    );
+    if (route) {
+      distanceMiles = route.distanceMiles;
+      driveTimeMins = route.driveTimeMins;
+    } else {
       distanceMiles =
         Math.round(
           haversineMiles(homeLat, homeLng, geoPoint.lat, geoPoint.lng) * 100,
         ) / 100;
+      driveTimeMins = 0;
     }
+
     const mileageCost =
       distanceMiles > 0
         ? Math.round(distanceMiles * 2 * irsRate * 100) / 100
         : 0;
-    return { distanceMiles, mileageCost };
+    return { distanceMiles, mileageCost, driveTimeMins };
   }
 
   private async getSigningDuration(

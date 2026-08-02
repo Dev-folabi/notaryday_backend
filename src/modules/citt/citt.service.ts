@@ -1,12 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import crypto from 'crypto';
-import axios from 'axios';
 import { PrismaService } from '../../config/prisma.service';
 import { RedisService } from '../../config/redis.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { JobsService } from '../jobs/jobs.service';
+import { OrsService } from '../../common/services/ors.service';
 import { calculateProfitability } from '../../common/utils/profitability.util';
 import { CittCheckDto } from './dto/citt-check.dto';
 import { JobStatus, SigningType } from '../../../generated/prisma';
@@ -16,8 +15,6 @@ const MIN_GAP_MINS = 10;
 const TAKE_IT_NET = 20;
 const RISKY_NET = 10;
 
-/** ORS route cache TTL: 1 hour */
-const ORS_CACHE_TTL = 3600;
 /** CITT result cache TTL: 5 min */
 const CITT_CACHE_TTL = 300;
 
@@ -58,7 +55,7 @@ export class CittService {
     private readonly geocoding: GeocodingService,
     private readonly userSettings: UserSettingsService,
     private readonly jobsService: JobsService,
-    private readonly config: ConfigService,
+    private readonly ors: OrsService,
   ) {}
 
   async runCheck(userId: string, dto: CittCheckDto): Promise<CittResult> {
@@ -168,8 +165,9 @@ export class CittService {
       );
     }
 
-    // Get drive time + distance from ORS
-    const route = await this.getRouteFromORS(
+    // Get drive time + distance from ORS (shared cache with jobs — same
+    // ors:lat,lng:lat,lng keys and 1h TTL)
+    const route = await this.ors.getRoute(
       originLat,
       originLng,
       jobGeo.lat,
@@ -306,90 +304,7 @@ export class CittService {
     return result;
   }
 
-  // ORS Route Lookup
-
-  private async getRouteFromORS(
-    fromLat: number,
-    fromLng: number,
-    toLat: number,
-    toLng: number,
-  ): Promise<{ distanceMiles: number; driveTimeMins: number } | null> {
-    const cacheKey = `ors:${fromLat.toFixed(5)},${fromLng.toFixed(5)}:${toLat.toFixed(5)},${toLng.toFixed(5)}`;
-    let cached: string | null = null;
-    try {
-      cached = await this.redis.get(cacheKey);
-    } catch (err) {
-      this.logger.warn(
-        `[CITT] ORS cache read skipped: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    if (cached) {
-      return JSON.parse(cached) as {
-        distanceMiles: number;
-        driveTimeMins: number;
-      };
-    }
-
-    const apiKey = this.config.get<string>('ors.apiKey');
-    const baseUrl =
-      this.config.get<string>('ors.baseUrl') ??
-      'https://api.openrouteservice.org/v2';
-
-    try {
-      const response = await axios.post(
-        `${baseUrl}/directions/driving-car/json`,
-        {
-          coordinates: [
-            [fromLng, fromLat],
-            [toLng, toLat],
-          ],
-          units: 'mi',
-        },
-        {
-          headers: {
-            Authorization: apiKey,
-            'Content-Type': 'application/json',
-            Accept: 'application/json, application/geo+json',
-          },
-          timeout: 10_000,
-        },
-      );
-      const summary = (
-        response.data as {
-          routes?: Array<{
-            summary?: { distance: number; duration: number };
-          }>;
-        }
-      ).routes?.[0]?.summary;
-
-      if (!summary) return null;
-
-      const result = {
-        distanceMiles: Math.round(summary.distance * 100) / 100,
-        driveTimeMins: Math.ceil(summary.duration / 60),
-      };
-
-      try {
-        await this.redis.set(cacheKey, JSON.stringify(result), ORS_CACHE_TTL);
-      } catch (err) {
-        this.logger.warn(
-          `[CITT] ORS cache write skipped: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-      return result;
-    } catch (error) {
-      let errorMessage = 'Unknown error';
-      if (axios.isAxiosError(error)) {
-        errorMessage = `${error.message}${error.response ? ` (Status: ${error.response.status})` : ''}`;
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      this.logger.error(`[CITT] ORS error: ${errorMessage}`);
-      // ORS is down/failing: return null so the caller declines with a clear
-      // message instead of showing a verdict with zero drive/mileage.
-      return null;
-    }
-  }
+  // ORS Route Lookup (delegated to shared OrsService)
 
   // Helpers
 
