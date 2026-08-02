@@ -79,8 +79,7 @@ async function bootstrap() {
       .addTag('Notifications', 'Email notifications')
       .addTag('Calendar', 'iCal feed & Google Calendar sync')
       .addTag('Email Templates', 'Custom email template management')
-      .addTag('Email Import', 'Parse jobs from forwarded emails')
-      .addTag('Screenshot Import', 'Parse jobs from screenshots')
+      .addTag('Job Import', 'Parse jobs from forwarded emails or screenshots')
       .addTag('Journal', 'Notarial journal entries')
       .addTag('Health', 'Health check')
       .build();

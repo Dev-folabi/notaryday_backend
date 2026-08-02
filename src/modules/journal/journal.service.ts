@@ -2,7 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { CreateJournalEntryDto } from './dto/journal.dto';
 import { UpdateJournalEntryDto } from './dto/journal.dto';
-import { sanitizeStrings, sanitizeText } from '../../common/utils/sanitize.util';
+import {
+  sanitizeStrings,
+  sanitizeText,
+} from '../../common/utils/sanitize.util';
 import { Job } from '../../../generated/prisma';
 
 @Injectable()

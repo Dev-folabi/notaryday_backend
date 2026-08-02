@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -6,17 +15,25 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '../../common/guards/auth.guard';
+import { PlanGuard } from '../../common/guards/plan.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { EmailImportService } from './email-import.service';
+import { RequiresPro } from '../../common/decorators/requires-pro.decorator';
+import { JobImportService } from './job-import.service';
 
-@ApiTags('Email Import')
-@Controller('email-import')
-export class EmailImportController {
-  constructor(private readonly emailImport: EmailImportService) {}
+@ApiTags('Job Import')
+@ApiBearerAuth()
+@Controller('imports')
+@UseGuards(AuthGuard, PlanGuard)
+export class JobImportController {
+  constructor(private readonly jobImport: JobImportService) {}
 
   @Post('inbound')
+  @Public()
   @ApiOperation({ summary: 'Inbound email webhook (called by Resend)' })
   @ApiBody({
     schema: {
@@ -73,7 +90,7 @@ export class EmailImportController {
     },
   ) {
     const data = body.data ?? {};
-    const result = await this.emailImport.handleInbound({
+    const result = await this.jobImport.handleInbound({
       from: data.from ?? body.from ?? body.sender ?? '',
       to: data.to ?? this.toArray(body.to),
       bcc: data.bcc ?? this.toArray(body.bcc),
@@ -95,38 +112,63 @@ export class EmailImportController {
     return Array.isArray(value) ? value : [value];
   }
 
+  @Post('upload')
+  @RequiresPro()
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'Upload a screenshot to parse job details via OCR (Pro only)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Screenshot image file (PNG, JPG, PDF)',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Parsed job data from screenshot' })
+  @ApiResponse({ status: 400, description: 'Invalid file or unable to parse' })
+  @ApiResponse({ status: 403, description: 'Pro subscription required' })
+  async upload(@CurrentUser('id') userId: string, @UploadedFile() file: any) {
+    const result = await this.jobImport.handleUpload(userId, file);
+    return { success: true, data: result };
+  }
+
   @Get()
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'List all email imports for the current user' })
-  @ApiResponse({ status: 200, description: 'Array of email import records' })
+  @RequiresPro()
+  @ApiOperation({ summary: 'List all job imports for the current user' })
+  @ApiResponse({ status: 200, description: 'Array of job import records' })
+  @ApiResponse({ status: 403, description: 'Pro subscription required' })
   async findAll(@CurrentUser('id') userId: string) {
-    const imports = await this.emailImport.findAll(userId);
+    const imports = await this.jobImport.findAll(userId);
     return { success: true, data: imports };
   }
 
   @Get(':id')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get a single email import by ID' })
-  @ApiParam({ name: 'id', description: 'Email import UUID' })
+  @RequiresPro()
+  @ApiOperation({ summary: 'Get a single job import by ID' })
+  @ApiParam({ name: 'id', description: 'Job import UUID' })
   @ApiResponse({
     status: 200,
-    description: 'Email import record with parsed data',
+    description: 'Job import record with parsed data',
   })
   @ApiResponse({ status: 404, description: 'Import not found' })
   async findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
-    const record = await this.emailImport.findOne(userId, id);
+    const record = await this.jobImport.findOne(userId, id);
     return { success: true, data: record };
   }
 
   @Post(':id/confirm')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
+  @RequiresPro()
   @ApiOperation({
-    summary: 'Confirm a parsed email import and create a job from it',
+    summary: 'Confirm a parsed job import and create a job from it',
   })
-  @ApiParam({ name: 'id', description: 'Email import UUID' })
+  @ApiParam({ name: 'id', description: 'Job import UUID' })
   @ApiBody({
     schema: {
       description: 'Optional field overrides for the created job',
@@ -134,13 +176,26 @@ export class EmailImportController {
       additionalProperties: true,
     },
   })
-  @ApiResponse({ status: 201, description: 'Job created from email import' })
+  @ApiResponse({ status: 201, description: 'Job created from import' })
+  @ApiResponse({ status: 403, description: 'Pro subscription required' })
   async confirm(
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() overrides: Record<string, any>,
   ) {
-    const job = await this.emailImport.confirm(userId, id, overrides);
+    const job = await this.jobImport.confirm(userId, id, overrides);
     return { success: true, data: job };
+  }
+
+  @Post(':id/decline')
+  @RequiresPro()
+  @ApiOperation({ summary: 'Decline a parsed job import' })
+  @ApiParam({ name: 'id', description: 'Job import UUID' })
+  @ApiResponse({ status: 200, description: 'Import declined' })
+  @ApiResponse({ status: 404, description: 'Import not found' })
+  @ApiResponse({ status: 403, description: 'Pro subscription required' })
+  async decline(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    const result = await this.jobImport.decline(userId, id);
+    return { success: true, data: result };
   }
 }

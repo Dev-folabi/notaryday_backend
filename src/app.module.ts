@@ -24,8 +24,7 @@ import { OrsModule } from './common/services/ors.module';
 import { PlannerModule } from './modules/planner/planner.module';
 import { BookingModule } from './modules/booking/booking.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
-import { EmailImportModule } from './modules/email-import/email-import.module';
-import { ScreenshotImportModule } from './modules/screenshot-import/screenshot-import.module';
+import { JobImportModule } from './modules/job-import/job-import.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -84,8 +83,7 @@ import { WorkersModule } from './workers/workers.module';
     PlannerModule,
     BookingModule,
     CalendarModule,
-    EmailImportModule,
-    ScreenshotImportModule,
+    JobImportModule,
     ExpensesModule,
     InvoicesModule,
     ReportsModule,

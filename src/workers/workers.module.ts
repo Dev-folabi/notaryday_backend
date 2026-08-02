@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
-import { EmailImportProcessor } from './email-import.processor';
+import { JobImportProcessor } from './job-import.processor';
 import { InvoiceProcessor } from './invoice.processor';
 import { NotificationProcessor } from './notification.processor';
 import { CalendarSyncProcessor } from './calendar-sync.processor';
 import { NotificationCronService } from './notification-cron.service';
 import { NotificationsModule } from '../modules/notifications/notifications.module';
 import {
-  QUEUE_EMAIL_IMPORT,
+  QUEUE_JOB_IMPORT,
   QUEUE_INVOICE,
   QUEUE_NOTIFICATION,
   QUEUE_CALENDAR_SYNC,
@@ -16,7 +16,7 @@ import {
 @Module({
   imports: [
     BullModule.registerQueue(
-      { name: QUEUE_EMAIL_IMPORT },
+      { name: QUEUE_JOB_IMPORT },
       { name: QUEUE_INVOICE },
       { name: QUEUE_NOTIFICATION },
       { name: QUEUE_CALENDAR_SYNC },
@@ -24,7 +24,7 @@ import {
     NotificationsModule,
   ],
   providers: [
-    EmailImportProcessor,
+    JobImportProcessor,
     InvoiceProcessor,
     NotificationProcessor,
     CalendarSyncProcessor,

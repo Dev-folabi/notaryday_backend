@@ -91,6 +91,13 @@ enum ImportStatus {
   COMPLETE
   FAILED
   DUPLICATE
+  CONFIRMED
+  DECLINED
+}
+
+enum ImportType {
+  EMAIL
+  SCREENSHOT
 }
 
 enum ScanbackStatus {
@@ -141,7 +148,7 @@ model User {
   password_reset_tokens PasswordResetToken[]
   calendar_connections  CalendarConnection[]
   notifications         Notification[]
-  email_imports         EmailImport[]
+  job_imports           JobImport[]
   email_templates       EmailTemplate[]
 
   @@map("users")
@@ -242,7 +249,7 @@ model Job {
   user_id String
   user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  // LocationemailImport
+  // Location
   address String
   lat     Decimal? @db.Decimal(10, 7) // Geocoded via Nominatim, cached
   lng     Decimal? @db.Decimal(10, 7)
@@ -283,8 +290,8 @@ model Job {
   // Source linkage
   booking_id      String?      @unique
   booking         Booking?     @relation(fields: [booking_id], references: [id])
-  email_import_id String? 
-  email_import    EmailImport? @relation(fields: [email_import_id], references: [id])
+  import_id       String?
+  job_import      JobImport?   @relation(fields: [import_id], references: [id])
   idempotency_key String?      @unique
 
   // Status timestamps (for analytics + audit)
@@ -386,19 +393,27 @@ model Booking {
 
 // EMAIL IMPORT (Pro feature)
 
-model EmailImport {
-  id      String @id @default(cuid())
-  user_id String
-  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+// JOB IMPORT (Pro feature) — unified record for email & screenshot imports
 
-  // Raw email data from Resend inbound webhook
-  resend_message_id String  @unique
+model JobImport {
+  id          String @id @default(cuid())
+  user_id     String
+  user        User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  import_type ImportType @default(EMAIL)
+
+  // Raw email data from Resend inbound webhook (email imports only)
+  resend_message_id String?  @unique
   resend_email_id   String? // Resend API id — used to fetch the email body (webhook is metadata-only)
-  from_address      String
+  from_address      String?
   recipient_address String? // The import address the email was sent to (import+username@...)
   subject           String?
-  raw_text          String  @db.Text
-  raw_html          String? @db.Text
+  raw_text          String?  @db.Text
+  raw_html          String?  @db.Text
+
+  // Screenshot source data (screenshot imports only)
+  file_key      String?
+  file_mimetype String?
 
   // AI parse result (OpenRouter)
   parsed_address          String?
@@ -425,7 +440,7 @@ model EmailImport {
 
   @@index([user_id, status])
   @@index([user_id, received_at])
-  @@map("email_imports")
+  @@map("job_imports")
 }
 
 // INVOICING

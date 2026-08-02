@@ -2,10 +2,12 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { PrismaService } from '../../config/prisma.service';
-import { QUEUE_EMAIL_IMPORT } from '../../queues/queue.constants';
+import { QUEUE_JOB_IMPORT } from '../../queues/queue.constants';
 import {
   ImportStatus,
+  ImportType,
   JobStatus,
   JobSource,
   SigningType,
@@ -13,14 +15,14 @@ import {
 import { UserSettingsService } from '../users/user-settings.service';
 
 @Injectable()
-export class EmailImportService {
-  private readonly logger = new Logger(EmailImportService.name);
+export class JobImportService {
+  private readonly logger = new Logger(JobImportService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly userSettings: UserSettingsService,
     private readonly config: ConfigService,
-    @InjectQueue(QUEUE_EMAIL_IMPORT) private readonly queue: Queue,
+    @InjectQueue(QUEUE_JOB_IMPORT) private readonly queue: Queue,
   ) {}
 
   /** Handle inbound email webhook from Resend */
@@ -60,9 +62,10 @@ export class EmailImportService {
     }
 
     // Create import record
-    const importRecord = await this.prisma.emailImport.create({
+    const importRecord = await this.prisma.jobImport.create({
       data: {
         user_id: user.id,
+        import_type: ImportType.EMAIL,
         resend_message_id: payload.messageId,
         resend_email_id: payload.emailId ?? null,
         from_address: payload.from,
@@ -141,10 +144,90 @@ export class EmailImportService {
     return (match ? match[1] : trimmed).trim() || null;
   }
 
-  /** List imports for a user */
+  /** Handle uploaded screenshot (saved to R2, enqueued for vision parsing) */
+  async handleUpload(
+    userId: string,
+    file: { originalname: string; buffer: Buffer; mimetype: string },
+  ) {
+    const r2AccountId = this.config.get<string>('R2_ACCOUNT_ID');
+    const accessKeyId = this.config.get<string>('R2_ACCESS_KEY_ID');
+    const secretAccessKey = this.config.get<string>('R2_SECRET_ACCESS_KEY');
+    const bucket = this.config.get<string>('R2_BUCKET_NAME');
+
+    if (!r2AccountId || !accessKeyId || !secretAccessKey || !bucket) {
+      throw new Error(
+        'R2 credentials are not fully configured in environment variables.',
+      );
+    }
+
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+    });
+
+    const fileKey = `screenshots/${userId}/${Date.now()}-${file.originalname}`;
+
+    try {
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: fileKey,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+        }),
+      );
+      this.logger.log(`Uploaded screenshot to R2: ${fileKey}`);
+    } catch (error) {
+      this.logger.error(`R2 Upload failed: ${(error as Error).message}`);
+      throw new Error('Failed to upload screenshot');
+    }
+
+    // Create import record (unified model — no email sentinels needed)
+    const importRecord = await this.prisma.jobImport.create({
+      data: {
+        user_id: userId,
+        import_type: ImportType.SCREENSHOT,
+        subject: file.originalname,
+        file_key: fileKey,
+        file_mimetype: file.mimetype,
+        status: ImportStatus.QUEUED,
+        received_at: new Date(),
+      },
+    });
+
+    // Queue for AI vision processing
+    try {
+      // Best-effort: if Redis/queue is down, give up after 2s — the import
+      // record is already persisted and can be re-queued.
+      await Promise.race([
+        this.queue.add('parse-screenshot', {
+          importId: importRecord.id,
+          fileKey,
+          mimetype: file.mimetype,
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue screenshot parse for ${importRecord.id}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+
+    return { status: 'queued', importId: importRecord.id };
+  }
+
+  /** List imports for a user (excludes confirmed/declined) */
   async findAll(userId: string) {
-    return this.prisma.emailImport.findMany({
-      where: { user_id: userId },
+    return this.prisma.jobImport.findMany({
+      where: {
+        user_id: userId,
+        status: { notIn: [ImportStatus.CONFIRMED, ImportStatus.DECLINED] },
+      },
       orderBy: { received_at: 'desc' },
       take: 50,
     });
@@ -152,7 +235,7 @@ export class EmailImportService {
 
   /** Get single import */
   async findOne(userId: string, importId: string) {
-    const record = await this.prisma.emailImport.findFirst({
+    const record = await this.prisma.jobImport.findFirst({
       where: { id: importId, user_id: userId },
     });
     if (!record) throw new NotFoundException('Import not found');
@@ -183,6 +266,11 @@ export class EmailImportService {
     const settings = await this.userSettings.get(userId);
     const irsRate = Number(settings.irs_rate_per_mile);
 
+    const source =
+      record.import_type === ImportType.SCREENSHOT
+        ? JobSource.SCREENSHOT
+        : JobSource.EMAIL_IMPORT;
+
     const job = await this.prisma.job.create({
       data: {
         user_id: userId,
@@ -203,12 +291,27 @@ export class EmailImportService {
 
         client_name: overrides?.client_name ?? record.parsed_client_name,
         platform_name: overrides?.platform_name ?? record.parsed_platform_name,
-        source: JobSource.EMAIL_IMPORT,
+        source,
         status: JobStatus.PENDING,
-        email_import_id: importId,
+        import_id: importId,
       },
     });
 
+    await this.prisma.jobImport.update({
+      where: { id: importId },
+      data: { status: ImportStatus.CONFIRMED },
+    });
+
     return job;
+  }
+
+  /** Decline an import (soft — keeps the record, removes it from the list) */
+  async decline(userId: string, importId: string) {
+    const record = await this.findOne(userId, importId);
+    await this.prisma.jobImport.update({
+      where: { id: record.id },
+      data: { status: ImportStatus.DECLINED },
+    });
+    return { declined: true, importId: record.id };
   }
 }
