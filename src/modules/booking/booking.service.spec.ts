@@ -90,7 +90,12 @@ describe('BookingService', () => {
       findFirst: jest.Mock;
       update: jest.Mock;
     };
-    job: { create: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
+    job: {
+      create: jest.Mock;
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
   let settingsService: { get: jest.Mock };
@@ -125,7 +130,7 @@ describe('BookingService', () => {
       },
       $transaction: jest.fn(),
     };
-    prisma.$transaction.mockImplementation(async (fn) =>
+    prisma.$transaction.mockImplementation((fn: (t: typeof tx) => unknown) =>
       fn(tx),
     );
 
@@ -141,7 +146,9 @@ describe('BookingService', () => {
         { provide: PrismaService, useValue: prisma },
         {
           provide: GeocodingService,
-          useValue: { geocode: jest.fn().mockResolvedValue({ lat: 30.3, lng: -97.7 }) },
+          useValue: {
+            geocode: jest.fn().mockResolvedValue({ lat: 30.3, lng: -97.7 }),
+          },
         },
         {
           provide: OrsService,
@@ -183,7 +190,10 @@ describe('BookingService', () => {
     it('rejects FREE plan notaries', async () => {
       prisma.user.findUnique.mockResolvedValue(FREE_USER);
       await expect(
-        service.create('freetier', dto(new Date(Date.now() + 86400000).toISOString())),
+        service.create(
+          'freetier',
+          dto(new Date(Date.now() + 86400000).toISOString()),
+        ),
       ).rejects.toThrow(
         new BadRequestException('Free plan users cannot receive bookings'),
       );
@@ -195,10 +205,11 @@ describe('BookingService', () => {
         makeSettings({ booking_page_enabled: false }),
       );
       await expect(
-        service.create('janenotary', dto(new Date(Date.now() + 86400000).toISOString())),
-      ).rejects.toThrow(
-        new BadRequestException('Booking page is not active'),
-      );
+        service.create(
+          'janenotary',
+          dto(new Date(Date.now() + 86400000).toISOString()),
+        ),
+      ).rejects.toThrow(new BadRequestException('Booking page is not active'));
     });
 
     it('enforces minimum notice hours', async () => {
@@ -211,7 +222,9 @@ describe('BookingService', () => {
           'janenotary',
           dto(new Date(Date.now() + 3600000).toISOString()),
         ),
-      ).rejects.toThrow(new BadRequestException('Bookings require at least 24 hour(s) notice'));
+      ).rejects.toThrow(
+        new BadRequestException('Bookings require at least 24 hour(s) notice'),
+      );
     });
 
     it('enforces the advance booking limit', async () => {
@@ -223,7 +236,9 @@ describe('BookingService', () => {
       await expect(
         service.create('janenotary', dto(farFuture)),
       ).rejects.toThrow(
-        new BadRequestException('Bookings can only be made up to 3 day(s) in advance'),
+        new BadRequestException(
+          'Bookings can only be made up to 3 day(s) in advance',
+        ),
       );
     });
 
@@ -243,7 +258,9 @@ describe('BookingService', () => {
         dto(new Date(Date.now() + 86400000).toISOString()),
       );
       expect(prisma.booking.create).toHaveBeenCalled();
-      const createArg = prisma.booking.create.mock.calls[0][0];
+      const createArg = (
+        prisma.booking.create.mock.calls as [Record<string, unknown>][]
+      )[0][0] as { data: Record<string, unknown> };
       expect(createArg.data.status).toBe(BookingStatus.PENDING_REVIEW);
       expect(createArg.data.service_type).toBe(SigningType.LOAN_REFI);
       expect(createArg.data.base_fee).toBe(125);
@@ -270,6 +287,27 @@ describe('BookingService', () => {
       );
     });
 
+    it('handles capitalized active-hours day keys (legacy frontend format)', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const date = nextWeekday(1);
+      settingsService.get.mockResolvedValue(
+        makeSettings({
+          booking_page_active_hours: {
+            Mon: { start: '08:00', end: '10:00' },
+            Tue: { start: '08:00', end: '10:00' },
+          },
+        }),
+      );
+      prisma.job.findMany.mockResolvedValue([]);
+
+      const result = await service.getSlots('janenotary', date);
+      expect(result.slots.length).toBeGreaterThan(0);
+      expect(result.notary!.active_hours).toEqual({
+        mon: { start: '08:00', end: '10:00' },
+        tue: { start: '08:00', end: '10:00' },
+      });
+    });
+
     it('generates 30-min slots within active hours, skipping overlaps', async () => {
       prisma.user.findUnique.mockResolvedValue(PRO_USER);
       const date = nextWeekday(1); // a Monday
@@ -286,8 +324,8 @@ describe('BookingService', () => {
       ]);
 
       const result = await service.getSlots('janenotary', date);
-      const slotTimes = result.slots.map((s: string) =>
-        new Date(s).getHours() * 60 + new Date(s).getMinutes(),
+      const slotTimes = result.slots.map(
+        (s: string) => new Date(s).getHours() * 60 + new Date(s).getMinutes(),
       );
       // 10:00 slot must be skipped (overlaps the confirmed job block 10:00-11:00
       // with 15 min buffer), 11:30 onwards present.
@@ -311,9 +349,7 @@ describe('BookingService', () => {
       const result = await service.getSlots('janenotary', date);
       const earliestAllowed = Date.now() + 24 * 3600000;
       for (const s of result.slots) {
-        expect(new Date(s as string).getTime()).toBeGreaterThanOrEqual(
-          earliestAllowed,
-        );
+        expect(new Date(s).getTime()).toBeGreaterThanOrEqual(earliestAllowed);
       }
     });
   });
@@ -337,17 +373,21 @@ describe('BookingService', () => {
       };
       prisma.booking.findFirst.mockResolvedValue(pendingBooking);
       const createdJob = { id: 'job-1' };
-      prisma.$transaction.mockImplementation(async (fn) => {
-        tx.booking.findFirst.mockResolvedValue(pendingBooking);
-        tx.job.create.mockResolvedValue(createdJob);
-        return fn(tx);
-      });
+      prisma.$transaction.mockImplementation(
+        (fn: (t: typeof tx) => unknown) => {
+          tx.booking.findFirst.mockResolvedValue(pendingBooking);
+          tx.job.create.mockResolvedValue(createdJob);
+          return fn(tx);
+        },
+      );
 
       const result = await service.approve('notary-1', 'bk-1');
 
       expect(prisma.$transaction).toHaveBeenCalled();
       expect(tx.job.create).toHaveBeenCalled();
-      const jobArg = tx.job.create.mock.calls[0][0];
+      const jobArg = (
+        tx.job.create.mock.calls as [Record<string, unknown>][]
+      )[0][0] as { data: Record<string, unknown> };
       expect(jobArg.data.source).toBe(JobSource.BOOKING_PAGE);
       expect(jobArg.data.status).toBe(JobStatus.CONFIRMED);
       expect(jobArg.data.booking_id).toBe('bk-1');
@@ -356,7 +396,9 @@ describe('BookingService', () => {
       expect(jobArg.data.fee).toBe(128.35);
 
       expect(tx.booking.update).toHaveBeenCalled();
-      const bookingArg = tx.booking.update.mock.calls[0][0];
+      const bookingArg = (
+        tx.booking.update.mock.calls as [Record<string, unknown>][]
+      )[0][0] as { data: Record<string, unknown> };
       expect(bookingArg.data.status).toBe(BookingStatus.CONFIRMED);
       expect(bookingArg.data.confirmed_at).toBeDefined();
 
@@ -395,7 +437,9 @@ describe('BookingService', () => {
         alternative_times: [alt],
       });
 
-      const updateArg = prisma.booking.update.mock.calls[0][0];
+      const updateArg = (
+        prisma.booking.update.mock.calls as [Record<string, unknown>][]
+      )[0][0] as { data: Record<string, unknown> };
       expect(updateArg.data.status).toBe(BookingStatus.DECLINED);
       expect(updateArg.data.declined_reason).toBe('Schedule conflict');
       expect(updateArg.data.alternative_times).toHaveLength(1);
@@ -470,26 +514,30 @@ describe('BookingService', () => {
         notary_id: 'notary-1',
         status: BookingStatus.CONFIRMED,
       });
-      prisma.$transaction.mockImplementation(async (fn) => {
-        tx.job.findFirst.mockResolvedValue({
-          id: 'job-1',
-          booking_id: 'bk-1',
-        });
-        tx.job.update.mockResolvedValue({ id: 'job-1' });
-        tx.booking.update.mockResolvedValue({ id: 'bk-1' });
-        return fn(tx);
-      });
+      prisma.$transaction.mockImplementation(
+        (fn: (t: typeof tx) => unknown) => {
+          tx.job.findFirst.mockResolvedValue({
+            id: 'job-1',
+            booking_id: 'bk-1',
+          });
+          tx.job.update.mockResolvedValue({ id: 'job-1' });
+          tx.booking.update.mockResolvedValue({ id: 'bk-1' });
+          return fn(tx);
+        },
+      );
 
       const result = await service.cancel('notary-1', 'bk-1');
 
       expect(tx.job.update).toHaveBeenCalled();
-      const jobUpdate = tx.job.update.mock.calls[0][0];
+      const jobUpdate = (
+        tx.job.update.mock.calls as [Record<string, unknown>][]
+      )[0][0] as { data: Record<string, unknown> };
       expect(jobUpdate.data.deleted_at).toBeInstanceOf(Date);
       expect(tx.booking.update).toHaveBeenCalled();
-      const bookingUpdate = tx.booking.update.mock.calls[0][0];
-      expect(bookingUpdate.data.status).toBe(
-        BookingStatus.CANCELLED_BY_CLIENT,
-      );
+      const bookingUpdate = (
+        tx.booking.update.mock.calls as [Record<string, unknown>][]
+      )[0][0] as { data: Record<string, unknown> };
+      expect(bookingUpdate.data.status).toBe(BookingStatus.CANCELLED_BY_CLIENT);
       expect(result.status).toBe(BookingStatus.CANCELLED_BY_CLIENT);
     });
 

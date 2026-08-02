@@ -6,6 +6,28 @@ import { NavApp, SigningType, Prisma } from '../../../generated/prisma';
 export class UserSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Normalize booking page active-hours day keys to lowercase ("mon".."sun")
+   * so getSlots (which reads lowercase) works regardless of what the client
+   * sent ("Mon", "MON", etc.).
+   */
+  private normalizeActiveHours(
+    value: unknown,
+  ): Record<string, { start?: string; end?: string }> | undefined {
+    if (typeof value !== 'object' || value === null) return undefined;
+    const out: Record<string, { start?: string; end?: string }> = {};
+    for (const [day, hours] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      const h = (hours ?? {}) as Record<string, unknown>;
+      out[day.toLowerCase()] = {
+        start: typeof h.start === 'string' ? h.start : undefined,
+        end: typeof h.end === 'string' ? h.end : undefined,
+      };
+    }
+    return out;
+  }
+
   async get(userId: string) {
     let settings = await this.prisma.userSettings.findUnique({
       where: { user_id: userId },
@@ -92,7 +114,9 @@ export class UserSettingsService {
     if (data.bookingBufferMins !== undefined)
       updateData.booking_buffer_mins = data.bookingBufferMins;
     if (data.bookingPageActiveHours !== undefined)
-      updateData.booking_page_active_hours = data.bookingPageActiveHours;
+      updateData.booking_page_active_hours = this.normalizeActiveHours(
+        data.bookingPageActiveHours,
+      );
     if (data.bookingPageServices !== undefined)
       updateData.booking_page_services =
         data.bookingPageServices as Prisma.InputJsonValue;

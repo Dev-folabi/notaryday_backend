@@ -28,6 +28,7 @@ import {
   IsArray,
 } from 'class-validator';
 import { NavApp } from '../../../generated/prisma';
+import { Type } from 'class-transformer';
 
 class UpdateProfileDto {
   @ApiPropertyOptional({ example: 'Jane Smith' })
@@ -56,7 +57,7 @@ class UpdateProfileDto {
   credentials?: string[];
 }
 
-class UpdateSettingsDto {
+export class UpdateSettingsDto {
   @ApiPropertyOptional({ example: '100 Congress Ave, Austin, TX 78701' })
   @IsOptional()
   @IsString()
@@ -121,6 +122,8 @@ class UpdateSettingsDto {
 
   @ApiPropertyOptional({ example: [] })
   @IsOptional()
+  @IsArray()
+  @Type(() => Object)
   booking_page_services?: Record<string, unknown>[];
 
   @ApiPropertyOptional({
@@ -128,6 +131,7 @@ class UpdateSettingsDto {
     description: 'Active hours per day of week for the booking page',
   })
   @IsOptional()
+  @Type(() => Object)
   booking_page_active_hours?: Record<string, { start?: string; end?: string }>;
 
   @ApiPropertyOptional({

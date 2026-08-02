@@ -612,7 +612,10 @@ export class BookingService {
         string,
         { start?: string; end?: string }
       >;
-    const activeHours = activeHoursMap?.[dayOfWeek];
+    const lowerHours: Record<string, { start?: string; end?: string }> = {};
+    for (const [k, v] of Object.entries(activeHoursMap ?? {}))
+      lowerHours[k.toLowerCase()] = v;
+    const activeHours = lowerHours[dayOfWeek];
     if (
       !activeHours ||
       !activeHours.start ||
@@ -714,13 +717,23 @@ export class BookingService {
       booking_min_notice_hours: number | null;
     },
   ) {
+    const activeHours = settings.booking_page_active_hours as Record<
+      string,
+      { start?: string; end?: string }
+    >;
+    const normalizedHours: Record<string, { start?: string; end?: string }> =
+      {};
+    for (const [k, v] of Object.entries(activeHours ?? {}))
+      normalizedHours[k.toLowerCase()] = v;
     return {
       full_name: user.full_name,
       username: user.username,
       bio: settings.booking_page_bio,
       service_area_miles: settings.service_area_miles,
       services: this.normalizeServices(settings.booking_page_services),
-      active_hours: settings.booking_page_active_hours ?? null,
+      active_hours: Object.keys(normalizedHours).length
+        ? normalizedHours
+        : null,
       min_notice_hours: settings.booking_min_notice_hours ?? null,
     };
   }
