@@ -17,7 +17,10 @@ export const validationSchema = Joi.object({
   // OpenRouter
   OPENROUTER_API_KEY: Joi.string().required(),
   OPENROUTER_DEFAULT_MODEL: Joi.string().default(
-    'mistralai/mistral-7b-instruct:free',
+    'google/gemma-4-26b-a4b-it:free',
+  ),
+  OPENROUTER_VISION_MODEL: Joi.string().default(
+    'google/gemma-4-26b-a4b-it:free',
   ),
 
   // Resend

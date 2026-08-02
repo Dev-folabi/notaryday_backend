@@ -13,6 +13,9 @@ import { NotificationsService } from '../modules/notifications/notifications.ser
 const PARSE_EMAIL = 'parse-email';
 const PARSE_SCREENSHOT = 'parse-screenshot';
 
+const DEFAULT_TEXT_MODEL = 'google/gemma-4-26b-a4b-it:free';
+const DEFAULT_VISION_MODEL = 'google/gemma-4-26b-a4b-it:free';
+
 interface ParsedImport {
   address?: string;
   appointment_time?: string;
@@ -60,12 +63,18 @@ export class JobImportProcessor {
 
       const systemPrompt =
         'Extract signing appointment details from this email. Return JSON only with fields: address, appointment_time (ISO 8601), signing_type (GENERAL|LOAN_REFI|HYBRID|PURCHASE_CLOSING|FIELD_INSPECTION|APOSTILLE), fee (number), platform_fee (number), client_name, platform_name, notes. All fields nullable.';
-      const parsed = await this.callAi([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: rawText },
-      ]);
+      const model =
+        this.config.get<string>('OPENROUTER_DEFAULT_MODEL') ??
+        DEFAULT_TEXT_MODEL;
+      const parsed = await this.callAi(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: rawText },
+        ],
+        model,
+      );
 
-      await this.writeParsed(importId, parsed, record.user_id, 'email');
+      await this.writeParsed(importId, parsed, record.user_id, 'email', model);
     } catch (error) {
       await this.handleError(importId, error);
     }
@@ -90,22 +99,34 @@ export class JobImportProcessor {
       const imageDataUrl = await this.fetchScreenshot(fileKey, mimetype);
       const systemPrompt =
         'Extract signing appointment details from this screenshot of a signing order or booking confirmation. Return JSON only with fields: address, appointment_time (ISO 8601), signing_type (GENERAL|LOAN_REFI|HYBRID|PURCHASE_CLOSING|FIELD_INSPECTION|APOSTILLE), fee (number), platform_fee (number), client_name, platform_name, notes. All fields nullable.';
+      const model =
+        this.config.get<string>('OPENROUTER_VISION_MODEL') ??
+        DEFAULT_VISION_MODEL;
 
-      const parsed = await this.callAi([
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Extract the signing details from this image.',
-            },
-            { type: 'image_url', image_url: { url: imageDataUrl } },
-          ],
-        },
-      ]);
+      const parsed = await this.callAi(
+        [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract the signing details from this image.',
+              },
+              { type: 'image_url', image_url: { url: imageDataUrl } },
+            ],
+          },
+        ],
+        model,
+      );
 
-      await this.writeParsed(importId, parsed, record.user_id, 'screenshot');
+      await this.writeParsed(
+        importId,
+        parsed,
+        record.user_id,
+        'screenshot',
+        model,
+      );
     } catch (error) {
       await this.handleError(importId, error);
     }
@@ -114,11 +135,9 @@ export class JobImportProcessor {
   /** Shared OpenRouter call (text-only for emails, multimodal for screenshots) */
   private async callAi(
     messages: Array<Record<string, unknown>>,
+    model: string,
   ): Promise<ParsedImport> {
     const apiKey = this.config.get<string>('OPENROUTER_API_KEY');
-    const model =
-      this.config.get<string>('OPENROUTER_MODEL') ??
-      'mistralai/mistral-7b-instruct:free';
 
     const res = await axios.post<{
       choices: Array<{ message: { content: string } }>;
@@ -202,6 +221,7 @@ export class JobImportProcessor {
     parsed: ParsedImport,
     userId: string,
     channel: 'email' | 'screenshot',
+    model: string,
   ) {
     await this.prisma.jobImport.update({
       where: { id: importId },
@@ -217,7 +237,7 @@ export class JobImportProcessor {
         parsed_client_name: parsed.client_name ?? null,
         parsed_platform_name: parsed.platform_name ?? null,
         parsed_notes: parsed.notes ?? null,
-        ai_model_used: this.config.get<string>('OPENROUTER_MODEL') ?? null,
+        ai_model_used: model,
         processed_at: new Date(),
       },
     });
