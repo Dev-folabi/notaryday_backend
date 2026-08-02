@@ -124,6 +124,13 @@ class UpdateSettingsDto {
   booking_page_services?: Record<string, unknown>[];
 
   @ApiPropertyOptional({
+    example: { Mon: { start: '08:00', end: '18:00' } },
+    description: 'Active hours per day of week for the booking page',
+  })
+  @IsOptional()
+  booking_page_active_hours?: Record<string, { start?: string; end?: string }>;
+
+  @ApiPropertyOptional({
     example: 0,
     description: 'Minimum notice hours required for a booking',
   })
@@ -274,6 +281,7 @@ export class UsersController {
       serviceAreaMiles: dto.serviceAreaMiles,
       bookingBufferMins: dto.bookingBufferMins,
       bookingPageServices: dto.booking_page_services,
+      bookingPageActiveHours: dto.booking_page_active_hours,
       bookingMinNoticeHours: dto.booking_min_notice_hours,
       bookingAdvanceLimitDays: dto.booking_advance_limit_days,
       remindersEnabled: dto.remindersEnabled,

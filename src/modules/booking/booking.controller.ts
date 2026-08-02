@@ -18,10 +18,15 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../../common/guards/auth.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BookingService } from './booking.service';
-import { CreateBookingDto, DeclineBookingDto } from './dto/booking.dto';
-import { BookingStatus, SigningType } from '../../../generated/prisma';
+import {
+  CreateBookingDto,
+  DeclineBookingDto,
+  GetSlotsQueryDto,
+} from './dto/booking.dto';
+import { BookingStatus } from '../../../generated/prisma';
 
 @ApiTags('Bookings')
 @Controller()
@@ -29,6 +34,7 @@ export class BookingController {
   constructor(private readonly bookings: BookingService) {}
 
   @Get('book/:username/slots')
+  @Public()
   @Throttle({ default: { ttl: 60000, limit: 20 } })
   @ApiOperation({
     summary: 'Get available booking slots for a notary (public)',
@@ -50,14 +56,18 @@ export class BookingController {
   @ApiResponse({ status: 200, description: 'Available time slots' })
   async getSlots(
     @Param('username') username: string,
-    @Query('date') date: string,
-    @Query('service_type') serviceType?: SigningType,
+    @Query() query: GetSlotsQueryDto,
   ) {
-    const result = await this.bookings.getSlots(username, date, serviceType);
+    const result = await this.bookings.getSlots(
+      username,
+      query.date,
+      query.service_type,
+    );
     return { success: true, data: result };
   }
 
   @Post('book/:username')
+  @Public()
   @ApiOperation({ summary: 'Create a booking request (public)' })
   @ApiParam({ name: 'username', example: 'janenotary' })
   @ApiResponse({
@@ -98,6 +108,17 @@ export class BookingController {
     return { success: true, data: booking };
   }
 
+  @Get('bookings/:id/analysis')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get booking profitability & conflict analysis' })
+  @ApiParam({ name: 'id', description: 'Booking UUID' })
+  @ApiResponse({ status: 200, description: 'Booking analysis' })
+  async analyze(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    const result = await this.bookings.analyze(userId, id);
+    return { success: true, data: result };
+  }
+
   @Post('bookings/:id/approve')
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
@@ -123,6 +144,17 @@ export class BookingController {
     @Body() dto: DeclineBookingDto,
   ) {
     const result = await this.bookings.decline(userId, id, dto);
+    return { success: true, data: result };
+  }
+
+  @Post('bookings/:id/cancel')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cancel a confirmed booking' })
+  @ApiParam({ name: 'id', description: 'Booking UUID' })
+  @ApiResponse({ status: 200, description: 'Booking cancelled' })
+  async cancel(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    const result = await this.bookings.cancel(userId, id);
     return { success: true, data: result };
   }
 }
