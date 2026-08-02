@@ -3,8 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { getQueueToken } from '@nestjs/bull';
 import { JobImportService } from './job-import.service';
 import { PrismaService } from '../../config/prisma.service';
-import { UserSettingsService } from '../users/user-settings.service';
-import { ImportStatus, ImportType, JobSource } from '../../../generated/prisma';
+import { JobsService } from '../jobs/jobs.service';
+import {
+  ImportStatus,
+  ImportType,
+  JobSource,
+  JobStatus,
+} from '../../../generated/prisma';
 
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({
@@ -23,11 +28,10 @@ describe('JobImportService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
-    job: { create: jest.fn() },
   };
-  const userSettings = { get: jest.fn() };
   const config = { get: jest.fn() };
   const queue = { add: jest.fn() };
+  const jobsService = { create: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -35,8 +39,8 @@ describe('JobImportService', () => {
       providers: [
         JobImportService,
         { provide: PrismaService, useValue: prisma },
-        { provide: UserSettingsService, useValue: userSettings },
         { provide: ConfigService, useValue: config },
+        { provide: JobsService, useValue: jobsService },
         { provide: getQueueToken('job-import'), useValue: queue },
       ],
     }).compile();
@@ -143,7 +147,7 @@ describe('JobImportService', () => {
   });
 
   describe('confirm', () => {
-    it('creates a job with SCREENSHOT source and marks import CONFIRMED', async () => {
+    it('delegates to JobsService.create and marks import CONFIRMED', async () => {
       prisma.jobImport.findFirst.mockResolvedValue({
         id: 'import-3',
         user_id: 'user-1',
@@ -154,20 +158,23 @@ describe('JobImportService', () => {
         parsed_signing_type: 'GENERAL',
         parsed_fee: 125,
         parsed_platform_fee: 0,
+        parsed_platform_name: 'SigningOrder',
       });
-      userSettings.get.mockResolvedValue({ irs_rate_per_mile: '0.67' });
-      prisma.job.create.mockResolvedValue({ id: 'job-3' });
+      jobsService.create.mockResolvedValue({ id: 'job-3' });
       prisma.jobImport.update.mockResolvedValue({});
 
       const job = await service.confirm('user-1', 'import-3');
 
-      expect(prisma.job.create).toHaveBeenCalledWith(
+      expect(jobsService.create).toHaveBeenCalledWith(
+        'user-1',
         expect.objectContaining({
-          data: expect.objectContaining({
-            source: JobSource.SCREENSHOT,
-            import_id: 'import-3',
-          }),
+          address: '123 Main St',
+          source: JobSource.SCREENSHOT,
+          status: JobStatus.PENDING,
+          platform_name: 'SigningOrder',
         }),
+        undefined,
+        'import-3',
       );
       expect(prisma.jobImport.update).toHaveBeenCalledWith({
         where: { id: 'import-3' },

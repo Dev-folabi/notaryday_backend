@@ -4,9 +4,14 @@ import { JobImportController } from './job-import.controller';
 import { JobImportService } from './job-import.service';
 import { QUEUE_JOB_IMPORT } from '../../queues/queue.constants';
 import { UsersModule } from '../users/users.module';
+import { JobsModule } from '../jobs/jobs.module';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: QUEUE_JOB_IMPORT }), UsersModule],
+  imports: [
+    BullModule.registerQueue({ name: QUEUE_JOB_IMPORT }),
+    UsersModule,
+    JobsModule,
+  ],
   controllers: [JobImportController],
   providers: [JobImportService],
   exports: [JobImportService],

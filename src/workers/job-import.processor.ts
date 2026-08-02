@@ -261,7 +261,7 @@ export class JobImportProcessor {
             } has been successfully parsed by Notary Day.</p>
             <p>Please log in to review the details and confirm the signing job.</p>
             <div style="text-align: center; margin: 24px 0;">
-              <a href="${appUrl}/import" style="background-color: #0F2C4E; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">
+              <a href="${appUrl}/import?review=${importId}" style="background-color: #0F2C4E; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">
                 Review Import
               </a>
             </div>

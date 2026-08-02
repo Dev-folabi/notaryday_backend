@@ -12,7 +12,8 @@ import {
   JobSource,
   SigningType,
 } from '../../../generated/prisma';
-import { UserSettingsService } from '../users/user-settings.service';
+import { JobsService } from '../jobs/jobs.service';
+import { CreateJobDto } from '../jobs/dto/create-job.dto';
 
 @Injectable()
 export class JobImportService {
@@ -20,8 +21,8 @@ export class JobImportService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly userSettings: UserSettingsService,
     private readonly config: ConfigService,
+    private readonly jobsService: JobsService,
     @InjectQueue(QUEUE_JOB_IMPORT) private readonly queue: Queue,
   ) {}
 
@@ -263,39 +264,40 @@ export class JobImportService {
       throw new Error('Import is not ready for confirmation');
     }
 
-    const settings = await this.userSettings.get(userId);
-    const irsRate = Number(settings.irs_rate_per_mile);
-
     const source =
       record.import_type === ImportType.SCREENSHOT
         ? JobSource.SCREENSHOT
         : JobSource.EMAIL_IMPORT;
 
-    const job = await this.prisma.job.create({
-      data: {
-        user_id: userId,
-        address: overrides?.address ?? record.parsed_address ?? '',
-        appointment_time: overrides?.appointment_time
-          ? new Date(overrides.appointment_time)
-          : record.parsed_appointment_time!,
-        signing_type:
-          overrides?.signing_type ?? record.parsed_signing_type ?? 'GENERAL',
-        signing_duration_mins: overrides?.signing_duration_mins ?? 60,
-        scanback_duration_mins: overrides?.scanback_duration_mins ?? 0,
-        fee: overrides?.fee ?? Number(record.parsed_fee ?? 0),
-        platform_fee:
-          overrides?.platform_fee ?? Number(record.parsed_platform_fee ?? 0),
-        net_earnings: overrides?.fee ?? Number(record.parsed_fee ?? 0),
-        effective_hourly: 0,
-        irs_rate_snapshot: irsRate,
+    // Delegate to the shared job creation pipeline so imported jobs get the
+    // same derived fields as manually-added ones: geocoding (lat/lng),
+    // signing/scanback end times, mileage from home base, and profitability.
+    const appointmentTime = overrides?.appointment_time
+      ? new Date(overrides.appointment_time)
+      : record.parsed_appointment_time!;
 
-        client_name: overrides?.client_name ?? record.parsed_client_name,
-        platform_name: overrides?.platform_name ?? record.parsed_platform_name,
-        source,
-        status: JobStatus.PENDING,
-        import_id: importId,
-      },
-    });
+    const dto: CreateJobDto = {
+      address: overrides?.address ?? record.parsed_address ?? '',
+      appointment_time: appointmentTime.toISOString(),
+      signing_type:
+        overrides?.signing_type ??
+        record.parsed_signing_type ??
+        SigningType.GENERAL,
+      fee: overrides?.fee ?? Number(record.parsed_fee ?? 0),
+      platform_fee:
+        overrides?.platform_fee ?? Number(record.parsed_platform_fee ?? 0),
+      signing_duration_mins: overrides?.signing_duration_mins,
+      scanback_duration_mins: overrides?.scanback_duration_mins,
+      client_name:
+        overrides?.client_name ?? record.parsed_client_name ?? undefined,
+      platform_name:
+        overrides?.platform_name ?? record.parsed_platform_name ?? undefined,
+      notes: record.parsed_notes ?? undefined,
+      source,
+      status: JobStatus.PENDING,
+    };
+
+    const job = await this.jobsService.create(userId, dto, undefined, importId);
 
     await this.prisma.jobImport.update({
       where: { id: importId },

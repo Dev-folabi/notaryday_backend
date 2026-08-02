@@ -69,7 +69,12 @@ export class JobsService {
 
   // CREATE
 
-  async create(userId: string, dto: CreateJobDto, idempotencyKey?: string) {
+  async create(
+    userId: string,
+    dto: CreateJobDto,
+    idempotencyKey?: string,
+    importId?: string,
+  ) {
     // Idempotency: a client-supplied key means "this is the same logical
     // create" — return the existing job instead of creating a duplicate.
     if (idempotencyKey) {
@@ -166,6 +171,7 @@ export class JobsService {
           signer_count: dto.signer_count ?? 1,
           notes: dto.notes,
           idempotency_key: idempotencyKey,
+          import_id: importId,
           status: resolvedStatus,
           confirmed_at:
             resolvedStatus === JobStatus.CONFIRMED ? new Date() : null,
