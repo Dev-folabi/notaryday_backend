@@ -178,8 +178,6 @@ export class JobsService {
         },
       });
     } catch (err) {
-      // Unique constraint on idempotency_key: a concurrent retry with the
-      // same key already created the job — return it instead of failing.
       const prismaError = err as {
         code?: string;
         meta?: { target?: string[] };
@@ -201,9 +199,6 @@ export class JobsService {
 
     if (job.status === JobStatus.CONFIRMED) {
       try {
-        // Best-effort side-effect: if Redis/queue is slow or down, give up
-        // after 2s so the POST /jobs response is never blocked. The job is
-        // already persisted — calendar sync must not hold it hostage.
         await Promise.race([
           this.calendarSyncQueue.add('sync-job', {
             userId,
@@ -212,8 +207,6 @@ export class JobsService {
           new Promise<void>((resolve) => setTimeout(resolve, 2000)),
         ]);
       } catch (err) {
-        // Calendar sync is a side-effect — a Redis hiccup must not fail the
-        // job creation (the job is already persisted).
         this.logger.error(
           `Failed to enqueue calendar sync for job ${job.id}`,
           err instanceof Error ? err.stack : String(err),
@@ -318,7 +311,17 @@ export class JobsService {
         ? new Date(signingEndsAt.getTime() + scanbackDurationMins * 60_000)
         : null;
 
-    // Any of these fields drive profitability/mileage → full recompute
+    const signingWindowChanged =
+      (dto.appointment_time !== undefined &&
+        new Date(dto.appointment_time).getTime() !==
+          job.appointment_time.getTime()) ||
+      (dto.signing_duration_mins !== undefined &&
+        dto.signing_duration_mins !== job.signing_duration_mins) ||
+      (dto.signing_type !== undefined &&
+        dto.signing_type !== job.signing_type) ||
+      (dto.scanback_duration_mins !== undefined &&
+        dto.scanback_duration_mins !== (job.scanback_duration_mins ?? 0));
+
     const calcChanged =
       addressChanged ||
       dto.fee !== undefined ||
@@ -343,9 +346,12 @@ export class JobsService {
         signing_duration_mins: signingDurationMins,
       }),
       signing_ends_at: signingEndsAt,
+      ...(signingWindowChanged &&
+        job.status !== JobStatus.SCANNING && {
+          scanback_ends_at: scanbackEndsAt,
+        }),
       ...(scanbackDurationMins !== (job.scanback_duration_mins ?? 0) && {
         scanback_duration_mins: scanbackDurationMins,
-        scanback_ends_at: scanbackEndsAt,
       }),
       ...(dto.client_name !== undefined && { client_name: dto.client_name }),
       ...(dto.client_email !== undefined && {
@@ -395,6 +401,11 @@ export class JobsService {
       where: { id: jobId },
       data,
     });
+
+    if (dto.appointment_time !== undefined) {
+      await this.invalidateRouteCache(userId, job.appointment_time);
+      await this.invalidateRouteCache(userId, appointmentTime);
+    }
 
     // Apply an optional status transition (validated & timestamped)
     if (dto.status !== undefined && dto.status !== updated.status) {

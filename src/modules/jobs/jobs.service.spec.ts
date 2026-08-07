@@ -155,4 +155,103 @@ describe('JobsService', () => {
       expect(data.mileage_cost).toBeNull();
     });
   });
+
+  describe('update', () => {
+    function updateData(): Record<string, unknown> {
+      const call = prismaMock.job.update.mock.calls[0] as [
+        args: { data: Record<string, unknown> },
+      ];
+      return call[0].data;
+    }
+
+    const confirmedLoanRefi = {
+      id: 'job-1',
+      user_id: 'user-1',
+      address: '123 Main St, Atlanta, GA',
+      appointment_time: new Date('2026-08-05T14:00:00.000Z'),
+      signing_duration_mins: 30,
+      scanback_duration_mins: 20,
+      signing_type: 'LOAN_REFI',
+      status: JobStatus.CONFIRMED,
+      lat: 33.77,
+      lng: -84.39,
+      fee: 150,
+      platform_fee: 0,
+      source: JobSource.MANUAL,
+    };
+
+    beforeEach(() => {
+      prismaMock.job.findFirst.mockResolvedValue(confirmedLoanRefi);
+      prismaMock.job.update.mockImplementation(
+        (args: { data: Record<string, unknown> }) =>
+          ({
+            id: 'job-1',
+            status: confirmedLoanRefi.status,
+            ...args.data,
+          }) as Record<string, unknown>,
+      );
+      redisMock.del.mockClear();
+    });
+
+    it('re-anchors scanback_ends_at when only the appointment time changes', async () => {
+      await service.update('user-1', 'job-1', {
+        appointment_time: '2026-08-06T15:00:00.000Z',
+      });
+
+      const data = updateData();
+      // signing window moves with the new time (15:00 + 30 min)
+      expect(data.appointment_time).toEqual(
+        new Date('2026-08-06T15:00:00.000Z'),
+      );
+      expect(data.signing_ends_at).toEqual(
+        new Date('2026-08-06T15:30:00.000Z'),
+      );
+      // scanback block re-anchored (15:30 + 20 min)
+      expect(data.scanback_ends_at).toEqual(
+        new Date('2026-08-06T15:50:00.000Z'),
+      );
+      // unchanged duration must not be rewritten
+      expect(data.scanback_duration_mins).toBeUndefined();
+    });
+
+    it('recomputes the scanback block when the signing duration changes', async () => {
+      await service.update('user-1', 'job-1', {
+        signing_duration_mins: 60,
+      });
+
+      const data = updateData();
+      expect(data.signing_duration_mins).toBe(60);
+      expect(data.signing_ends_at).toEqual(
+        new Date('2026-08-05T15:00:00.000Z'),
+      );
+      expect(data.scanback_ends_at).toEqual(
+        new Date('2026-08-05T15:20:00.000Z'),
+      );
+      expect(data.scanback_duration_mins).toBeUndefined();
+    });
+
+    it('does not clobber a live SCANNING countdown when rescheduling', async () => {
+      prismaMock.job.findFirst.mockResolvedValue({
+        ...confirmedLoanRefi,
+        status: JobStatus.SCANNING,
+      });
+
+      await service.update('user-1', 'job-1', {
+        appointment_time: '2026-08-06T15:00:00.000Z',
+      });
+
+      const data = updateData();
+      expect(data.signing_ends_at).toBeDefined();
+      expect(data.scanback_ends_at).toBeUndefined();
+    });
+
+    it('invalidates the route cache for the old and new dates on reschedule', async () => {
+      await service.update('user-1', 'job-1', {
+        appointment_time: '2026-08-06T15:00:00.000Z',
+      });
+
+      expect(redisMock.del).toHaveBeenCalledWith('route:user-1:2026-08-05');
+      expect(redisMock.del).toHaveBeenCalledWith('route:user-1:2026-08-06');
+    });
+  });
 });
