@@ -656,7 +656,8 @@ export class BookingService {
 
     // Generate 30-min slots within active hours
     const buffer = settings.booking_buffer_mins;
-    const slots: string[] = [];
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const slots: { time: string; iso: string }[] = [];
     const slotStart = new Date(day);
     slotStart.setHours(startH, startM, 0, 0);
     const slotEnd = new Date(day);
@@ -700,7 +701,11 @@ export class BookingService {
       });
 
       if (!conflicts) {
-        slots.push(candidateStart.toISOString());
+        const start = new Date(t);
+        slots.push({
+          time: `${pad2(start.getHours())}:${pad2(start.getMinutes())}`,
+          iso: start.toISOString(),
+        });
       }
     }
 

@@ -324,9 +324,10 @@ describe('BookingService', () => {
       ]);
 
       const result = await service.getSlots('janenotary', date);
-      const slotTimes = result.slots.map(
-        (s: string) => new Date(s).getHours() * 60 + new Date(s).getMinutes(),
-      );
+      const slotTimes = result.slots.map((slot: { time: string }) => {
+        const [hh, mm] = slot.time.split(':').map(Number);
+        return hh * 60 + mm;
+      });
       // 10:00 slot must be skipped (overlaps the confirmed job block 10:00-11:00
       // with 15 min buffer), 11:30 onwards present.
       expect(slotTimes).not.toContain(10 * 60);
@@ -348,8 +349,10 @@ describe('BookingService', () => {
       const date = nextWeekday(1, 4);
       const result = await service.getSlots('janenotary', date);
       const earliestAllowed = Date.now() + 24 * 3600000;
-      for (const s of result.slots) {
-        expect(new Date(s).getTime()).toBeGreaterThanOrEqual(earliestAllowed);
+      for (const slot of result.slots) {
+        expect(new Date(slot.iso).getTime()).toBeGreaterThanOrEqual(
+          earliestAllowed,
+        );
       }
     });
   });
