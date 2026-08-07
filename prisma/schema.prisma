@@ -171,6 +171,7 @@ model UserSettings {
   scanback_duration_mins Int?
 
   // Booking page settings
+  timezone                  String? @default("America/New_York") // IANA name for client-facing display
   booking_page_enabled      Boolean @default(false)
   booking_page_bio          String? @db.Text
   service_area_miles        Int     @default(25) // Max radius for direct bookings
@@ -351,6 +352,9 @@ model Booking {
   id        String @id @default(cuid())
   notary_id String
   notary    User   @relation(fields: [notary_id], references: [id], onDelete: Cascade)
+
+  // Human-friendly reference shown to clients (e.g. "ND-2603-44821")
+  ref String? @unique
 
   // Client info (no account required)
   client_name  String

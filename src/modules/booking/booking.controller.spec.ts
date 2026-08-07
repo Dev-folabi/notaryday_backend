@@ -11,6 +11,7 @@ describe('BookingController', () => {
   let reflector: Reflector;
   const service = {
     getSlots: jest.fn(),
+    suggestAlternatives: jest.fn(),
     create: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
@@ -50,6 +51,10 @@ describe('BookingController', () => {
     expect(isPublic(controller.createBooking)).toBe(true);
   });
 
+  it('exposes GET book/:username/alternatives as a public route', () => {
+    expect(isPublic(controller.getAlternatives)).toBe(true);
+  });
+
   it('requires auth for GET bookings/:id/analysis', () => {
     expect(isPublic(controller.analyze)).toBe(false);
   });
@@ -76,6 +81,27 @@ describe('BookingController', () => {
     expect(result).toEqual({
       success: true,
       data: { slots: ['2026-08-03T10:00:00.000Z'] },
+    });
+  });
+
+  it('delegates getAlternatives and wraps the response', async () => {
+    service.suggestAlternatives.mockResolvedValue({
+      slots: [{ time: '14:00', iso: '2026-08-03T18:00:00.000Z' }],
+    });
+    const result = await controller.getAlternatives('janenotary', {
+      date: '2026-08-03',
+      time: '13:00',
+      service_type: SigningType.GENERAL,
+    });
+    expect(service.suggestAlternatives).toHaveBeenCalledWith(
+      'janenotary',
+      '2026-08-03',
+      '13:00',
+      SigningType.GENERAL,
+    );
+    expect(result).toEqual({
+      success: true,
+      data: { slots: [{ time: '14:00', iso: '2026-08-03T18:00:00.000Z' }] },
     });
   });
 

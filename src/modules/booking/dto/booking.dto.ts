@@ -78,3 +78,24 @@ export class GetSlotsQueryDto {
   @IsOptional()
   service_type?: SigningType;
 }
+
+export class GetAlternativesQueryDto {
+  @ApiProperty({
+    example: '2025-06-02',
+    description: 'Calendar date of the requested slot',
+  })
+  @IsString()
+  date: string;
+
+  @ApiProperty({
+    example: '14:00',
+    description: 'Wall-clock time (HH:MM) of the requested slot to exclude',
+  })
+  @IsString()
+  time: string;
+
+  @ApiPropertyOptional({ enum: SigningType })
+  @IsEnum(SigningType)
+  @IsOptional()
+  service_type?: SigningType;
+}

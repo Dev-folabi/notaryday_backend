@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { BookingService } from './booking.service';
 import { PrismaService } from '../../config/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
@@ -13,6 +13,7 @@ import {
   JobStatus,
   PlanTier,
   SigningType,
+  Prisma,
 } from '../../../generated/prisma';
 
 const PRO_USER = {
@@ -103,12 +104,15 @@ describe('BookingService', () => {
 
   const tx = {
     booking: {
+      create: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
     job: {
       create: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -171,6 +175,14 @@ describe('BookingService', () => {
     }).compile();
 
     jest.clearAllMocks();
+
+    // Defaults so the slot engine's conflict queries resolve to "free" unless a
+    // test overrides them.
+    tx.job.findMany.mockResolvedValue([]);
+    tx.booking.findMany.mockResolvedValue([]);
+    tx.booking.create.mockResolvedValue({ id: 'bk-1' });
+    prisma.job.findMany.mockResolvedValue([]);
+    prisma.booking.findMany.mockResolvedValue([]);
 
     service = module.get<BookingService>(BookingService);
   });
@@ -242,7 +254,7 @@ describe('BookingService', () => {
       );
     });
 
-    it('creates a PENDING_REVIEW booking with the configured base fee', async () => {
+    it('creates a PENDING_REVIEW booking with the configured base fee and ref', async () => {
       prisma.user.findUnique.mockResolvedValue(PRO_USER);
       const created = {
         id: 'bk-1',
@@ -251,20 +263,103 @@ describe('BookingService', () => {
         base_fee: 125,
         travel_fee_estimate: 3.35,
       };
-      prisma.booking.create.mockResolvedValue(created);
+      tx.booking.create.mockResolvedValue(created);
 
       const result = await service.create(
         'janenotary',
         dto(new Date(Date.now() + 86400000).toISOString()),
       );
-      expect(prisma.booking.create).toHaveBeenCalled();
+      expect(tx.booking.create).toHaveBeenCalled();
       const createArg = (
-        prisma.booking.create.mock.calls as [Record<string, unknown>][]
+        tx.booking.create.mock.calls as [Record<string, unknown>][]
       )[0][0] as { data: Record<string, unknown> };
       expect(createArg.data.status).toBe(BookingStatus.PENDING_REVIEW);
       expect(createArg.data.service_type).toBe(SigningType.LOAN_REFI);
       expect(createArg.data.base_fee).toBe(125);
+      expect(createArg.data.ref).toMatch(/^ND-\d{4}-\d{5}$/);
       expect(result).toBe(created);
+    });
+
+    it('rejects when the slot was just claimed by a pending request (race)', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const requestedTime = new Date(Date.now() + 86400000);
+      const settings = makeSettings({
+        booking_page_services: [
+          {
+            signing_type: SigningType.LOAN_REFI,
+            name: 'Loan Refi',
+            duration_mins: 60,
+            scanback_mins: 20,
+            base_fee: 125,
+          },
+        ],
+      });
+      settingsService.get.mockResolvedValue(settings);
+      tx.job.findMany.mockResolvedValue([]);
+      tx.booking.findMany.mockResolvedValue([
+        {
+          id: 'bk-rival',
+          notary_id: 'notary-1',
+          service_type: SigningType.LOAN_REFI,
+          requested_time: requestedTime,
+        },
+      ]);
+
+      try {
+        await service.create('janenotary', dto(requestedTime.toISOString()));
+        throw new Error('expected slot conflict');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ConflictException);
+        expect((e as ConflictException).getResponse()).toMatchObject({
+          code: 'SLOT_CONFLICT',
+        });
+      }
+    });
+
+    it('maps a concurrent serialization abort (P2034) to a slot conflict', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const requestedTime = new Date(Date.now() + 86400000);
+      prisma.$transaction.mockImplementation(() => {
+        throw new Prisma.PrismaClientKnownRequestError(
+          'Transaction failed due to a write conflict',
+          { code: 'P2034', clientVersion: 'test' },
+        );
+      });
+
+      try {
+        await service.create('janenotary', dto(requestedTime.toISOString()));
+        throw new Error('expected slot conflict');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ConflictException);
+        expect((e as ConflictException).getResponse()).toMatchObject({
+          code: 'SLOT_CONFLICT',
+        });
+      }
+    });
+  });
+
+  describe('suggestAlternatives', () => {
+    it('returns the next available slots excluding the requested time', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const date = nextWeekday(1);
+      const result = await service.suggestAlternatives(
+        'janenotary',
+        date,
+        '10:00',
+        SigningType.LOAN_REFI,
+      );
+      expect(result.slots.length).toBeGreaterThan(0);
+      for (const s of result.slots) {
+        expect(s.time).toMatch(/^\d{2}:\d{2}$/);
+        expect(typeof s.iso).toBe('string');
+        expect(s.duration_mins).toBe(60);
+        expect(typeof s.note).toBe('string');
+      }
+      // The exact requested time on the requested date must not be offered.
+      const sameDay = result.slots.filter(
+        (s) => new Date(s.iso).toDateString() === new Date(date).toDateString(),
+      );
+      expect(sameDay.some((s) => s.time === '10:00')).toBe(false);
     });
   });
 
@@ -354,6 +449,43 @@ describe('BookingService', () => {
           earliestAllowed,
         );
       }
+    });
+
+    it('excludes slots claimed by a pending (unapproved) request', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const date = nextWeekday(1); // a Monday
+      prisma.job.findMany.mockResolvedValue([]);
+      prisma.booking.findMany.mockResolvedValue([
+        {
+          id: 'bk-pending',
+          notary_id: 'notary-1',
+          service_type: SigningType.LOAN_REFI,
+          requested_time: new Date(`${date}T10:00:00`),
+        },
+      ]);
+
+      const result = await service.getSlots('janenotary', date);
+      const slotTimes = result.slots.map((slot: { time: string }) => {
+        const [hh, mm] = slot.time.split(':').map(Number);
+        return hh * 60 + mm;
+      });
+      // 10:00 is claimed (60 min signing + 20 min scanback + 15 min buffer);
+      // 12:00 onwards is free again.
+      expect(slotTimes).not.toContain(10 * 60);
+      expect(slotTimes).toContain(12 * 60);
+    });
+
+    it('returns the notary timezone for client-side display', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      settingsService.get.mockResolvedValue(
+        makeSettings({ timezone: 'America/Los_Angeles' }),
+      );
+      prisma.job.findMany.mockResolvedValue([]);
+      prisma.booking.findMany.mockResolvedValue([]);
+
+      const result = await service.getSlots('janenotary', nextWeekday(1));
+      expect(result.notary!.timezone).toBe('America/Los_Angeles');
+      expect(typeof result.notary!.timezone_abbr).toBe('string');
     });
   });
 

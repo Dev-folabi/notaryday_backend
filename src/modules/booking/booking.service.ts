@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
@@ -16,6 +17,7 @@ import {
   JobSource,
   SigningType,
   PlanTier,
+  Prisma,
 } from '../../../generated/prisma';
 
 export interface BookingServiceConfig {
@@ -33,6 +35,14 @@ type ServiceDefaults = {
   base_fee: number;
   duration_mins: number;
   scanback_mins: number;
+};
+
+type SlotSettings = {
+  booking_page_active_hours: unknown;
+  booking_page_services: unknown;
+  booking_min_notice_hours: number | null;
+  booking_advance_limit_days: number | null;
+  booking_buffer_mins: number | null;
 };
 
 const DEFAULT_SERVICE_CONFIG: Record<string, ServiceDefaults> = {
@@ -145,25 +155,61 @@ export class BookingService {
     const services = this.normalizeServices(settings.booking_page_services);
     const service = services.find((s) => s.signing_type === dto.service_type);
     const baseFee = service?.base_fee ?? 75;
+    const totalBlockMins =
+      (service?.duration_mins ?? 60) + (service?.scanback_mins ?? 0);
+    const bufferMins = settings.booking_buffer_mins ?? 0;
 
-    const booking = await this.prisma.booking.create({
-      data: {
-        notary_id: notary.id,
-        client_name: dto.client_name,
-        client_email: dto.client_email,
-        client_phone: dto.client_phone,
-        address: dto.address,
-        lat: geo?.lat,
-        lng: geo?.lng,
-        service_type: dto.service_type,
-        requested_time: requestedTime,
-        document_type: dto.document_type,
-        notes: dto.notes,
-        base_fee: baseFee,
-        travel_fee_estimate: travelFee,
-        status: BookingStatus.PENDING_REVIEW,
-      },
-    });
+    let booking: Prisma.BookingGetPayload<object>;
+    try {
+      booking = await this.prisma.$transaction(
+        async (tx) => {
+          const taken = await this.isSlotBlockTaken(
+            notary.id,
+            requestedTime,
+            totalBlockMins,
+            bufferMins,
+            { includePending: true, services, client: tx },
+          );
+          if (taken) {
+            throw new ConflictException({
+              code: 'SLOT_CONFLICT',
+              message: 'That time was just taken. Please pick another slot.',
+            });
+          }
+          return tx.booking.create({
+            data: {
+              notary_id: notary.id,
+              ref: this.generateBookingRef(notary.id),
+              client_name: dto.client_name,
+              client_email: dto.client_email,
+              client_phone: dto.client_phone,
+              address: dto.address,
+              lat: geo?.lat,
+              lng: geo?.lng,
+              service_type: dto.service_type,
+              requested_time: requestedTime,
+              document_type: dto.document_type,
+              notes: dto.notes,
+              base_fee: baseFee,
+              travel_fee_estimate: travelFee,
+              status: BookingStatus.PENDING_REVIEW,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2034'
+      ) {
+        throw new ConflictException({
+          code: 'SLOT_CONFLICT',
+          message: 'That time was just taken. Please pick another slot.',
+        });
+      }
+      throw err;
+    }
 
     // Notify the notary of the new booking request (in-app)
     await this.notifications
@@ -178,6 +224,60 @@ export class BookingService {
       .catch(() => {});
 
     return booking;
+  }
+
+  /** Public: suggest alternative slots near the requested time (race fallback) */
+  async suggestAlternatives(
+    username: string,
+    date: string,
+    requestedTime: string,
+    serviceType?: SigningType,
+  ) {
+    const notary = await this.prisma.user.findUnique({ where: { username } });
+    if (!notary) throw new NotFoundException('Notary not found');
+
+    if (notary.plan === PlanTier.FREE)
+      throw new BadRequestException('Free plan users cannot receive bookings');
+
+    const settings = await this.userSettings.get(notary.id);
+    if (!settings.booking_page_enabled) return { slots: [] };
+
+    const services = this.normalizeServices(settings.booking_page_services);
+    const service = services.find(
+      (s) => s.signing_type === (serviceType ?? SigningType.GENERAL),
+    );
+    const duration = service?.duration_mins ?? 60;
+
+    const out: {
+      time: string;
+      iso: string;
+      duration_mins: number;
+      note: string;
+    }[] = [];
+    const day = new Date(`${date}T00:00:00`);
+    for (let i = 0; i < 14 && out.length < 5; i++) {
+      const cursor = new Date(day);
+      cursor.setDate(cursor.getDate() + i);
+      const cursorDate = `${cursor.getFullYear()}-${String(
+        cursor.getMonth() + 1,
+      ).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+      const slots = await this.computeSlots(
+        notary.id,
+        settings,
+        cursorDate,
+        serviceType ?? SigningType.GENERAL,
+      );
+      for (const slot of slots) {
+        if (cursorDate === date && slot.time === requestedTime) continue;
+        out.push({
+          ...slot,
+          duration_mins: duration,
+          note: this.alternativeNote(i, slot.time),
+        });
+        if (out.length >= 5) break;
+      }
+    }
+    return { slots: out };
   }
 
   /** Auth'd: list bookings for notary */
@@ -600,18 +700,30 @@ export class BookingService {
     const settings = await this.userSettings.get(notary.id);
     if (!settings.booking_page_enabled) return { slots: [], notary: null };
 
-    // Get active hours for the day. `date` is a calendar date ("YYYY-MM-DD");
-    // parse it as local midnight so day-of-week and slot hours match the
-    // notary's local day rather than UTC.
+    const slots = await this.computeSlots(
+      notary.id,
+      settings,
+      date,
+      serviceType ?? SigningType.GENERAL,
+    );
+
+    return { slots, notary: this.publicNotaryInfo(notary, settings) };
+  }
+
+  private async computeSlots(
+    notaryId: string,
+    settings: SlotSettings,
+    date: string,
+    serviceType: SigningType,
+  ): Promise<{ time: string; iso: string }[]> {
     const day = new Date(`${date}T00:00:00`);
     const dayOfWeek = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][
       day.getDay()
     ];
-    const activeHoursMap =
-      settings.booking_page_active_hours as unknown as Record<
-        string,
-        { start?: string; end?: string }
-      >;
+    const activeHoursMap = settings.booking_page_active_hours as Record<
+      string,
+      { start?: string; end?: string }
+    >;
     const lowerHours: Record<string, { start?: string; end?: string }> = {};
     for (const [k, v] of Object.entries(activeHoursMap ?? {}))
       lowerHours[k.toLowerCase()] = v;
@@ -623,7 +735,7 @@ export class BookingService {
       !activeHours.start.includes(':') ||
       !activeHours.end.includes(':')
     )
-      return { slots: [], notary: this.publicNotaryInfo(notary, settings) };
+      return [];
 
     const [startH, startM] = (activeHours.start ?? '08:00')
       .split(':')
@@ -632,30 +744,64 @@ export class BookingService {
 
     // Get service duration
     const services = this.normalizeServices(settings.booking_page_services);
-    const service = services.find(
-      (s) => s.signing_type === (serviceType ?? SigningType.GENERAL),
-    );
+    const service = services.find((s) => s.signing_type === serviceType);
     const duration = service?.duration_mins ?? 60;
     const scanback = service?.scanback_mins ?? 0;
     const totalBlock = duration + scanback;
+    const buffer = settings.booking_buffer_mins ?? 0;
 
-    // Load confirmed jobs for the date
+    // Load confirmed jobs + pending requests for the date
     const nextDay = new Date(day);
     nextDay.setDate(nextDay.getDate() + 1);
-    const jobs = await this.prisma.job.findMany({
-      where: {
-        user_id: notary.id,
-        deleted_at: null,
-        status: {
-          in: [JobStatus.CONFIRMED, JobStatus.IN_PROGRESS, JobStatus.SCANNING],
+    const [jobs, pending] = await Promise.all([
+      this.prisma.job.findMany({
+        where: {
+          user_id: notaryId,
+          deleted_at: null,
+          status: {
+            in: [
+              JobStatus.CONFIRMED,
+              JobStatus.IN_PROGRESS,
+              JobStatus.SCANNING,
+            ],
+          },
+          appointment_time: { gte: day, lt: nextDay },
         },
-        appointment_time: { gte: day, lt: nextDay },
-      },
-      orderBy: { appointment_time: 'asc' },
-    });
+        orderBy: { appointment_time: 'asc' },
+      }),
+      this.prisma.booking.findMany({
+        where: {
+          notary_id: notaryId,
+          deleted_at: null,
+          status: BookingStatus.PENDING_REVIEW,
+          requested_time: { gte: day, lt: nextDay },
+        },
+      }),
+    ]);
+
+    const occupied: { start: number; end: number }[] = [];
+    for (const j of jobs) {
+      occupied.push({
+        start: j.appointment_time.getTime(),
+        end: (
+          j.scanback_ends_at ??
+          j.signing_ends_at ??
+          new Date(
+            j.appointment_time.getTime() + j.signing_duration_mins * 60_000,
+          )
+        ).getTime(),
+      });
+    }
+    for (const pb of pending) {
+      const svc = services.find((s) => s.signing_type === pb.service_type);
+      const blockMins = (svc?.duration_mins ?? 60) + (svc?.scanback_mins ?? 0);
+      occupied.push({
+        start: pb.requested_time.getTime(),
+        end: pb.requested_time.getTime() + blockMins * 60_000,
+      });
+    }
 
     // Generate 30-min slots within active hours
-    const buffer = settings.booking_buffer_mins;
     const pad2 = (n: number) => String(n).padStart(2, '0');
     const slots: { time: string; iso: string }[] = [];
     const slotStart = new Date(day);
@@ -683,22 +829,16 @@ export class BookingService {
       )
         continue;
 
-      // Check no overlap with existing jobs (including their scanback)
-      const conflicts = jobs.some((j) => {
-        const jobStart = j.appointment_time.getTime();
-        const jobEnd = (
-          j.scanback_ends_at ??
-          j.signing_ends_at ??
-          new Date(jobStart + j.signing_duration_mins * 60_000)
-        ).getTime();
-        const jobWithBuffer = jobEnd + buffer * 60_000;
-        const candidateWithBuffer = candidateEnd.getTime() + buffer * 60_000;
-
-        return !(
-          candidateWithBuffer <= jobStart ||
-          candidateStart.getTime() >= jobWithBuffer
-        );
-      });
+      // Check no overlap with existing jobs / pending requests
+      const conflicts = occupied.some((o) =>
+        this.overlapsBlock(
+          candidateStart.getTime(),
+          candidateEnd.getTime(),
+          buffer * 60_000,
+          o.start,
+          o.end,
+        ),
+      );
 
       if (!conflicts) {
         const start = new Date(t);
@@ -709,7 +849,135 @@ export class BookingService {
       }
     }
 
-    return { slots, notary: this.publicNotaryInfo(notary, settings) };
+    return slots;
+  }
+
+  /** True when [candidateStart, candidateEnd] (each padded by buffer) collides with an occupied block. */
+  private overlapsBlock(
+    candidateStartMs: number,
+    candidateEndMs: number,
+    bufferMs: number,
+    occupiedStart: number,
+    occupiedEnd: number,
+  ): boolean {
+    return !(
+      candidateEndMs + bufferMs <= occupiedStart ||
+      candidateStartMs >= occupiedEnd + bufferMs
+    );
+  }
+
+  /**
+   * True when the candidate block collides with a confirmed/in-progress job or
+   * (when includePending) an existing PENDING_REVIEW request for the notary.
+   * Accepts an optional transaction client so the check runs inside the same
+   * serializable transaction as the insert.
+   */
+  private async isSlotBlockTaken(
+    notaryId: string,
+    candidateStart: Date,
+    totalBlockMins: number,
+    bufferMins: number,
+    options?: {
+      includePending?: boolean;
+      services?: BookingServiceConfig[];
+      client?: Prisma.TransactionClient;
+    },
+  ): Promise<boolean> {
+    const db = options?.client ?? this.prisma;
+    const candidateEnd = candidateStart.getTime() + totalBlockMins * 60_000;
+    // Generous window so long signings that begin earlier still get caught.
+    const pad = (bufferMins + 240) * 60_000;
+    const from = new Date(candidateStart.getTime() - pad);
+    const to = new Date(candidateEnd + pad);
+
+    const [jobs, pending] = await Promise.all([
+      db.job.findMany({
+        where: {
+          user_id: notaryId,
+          deleted_at: null,
+          status: {
+            in: [
+              JobStatus.CONFIRMED,
+              JobStatus.IN_PROGRESS,
+              JobStatus.SCANNING,
+            ],
+          },
+          appointment_time: { gte: from, lt: to },
+        },
+      }),
+      options?.includePending
+        ? db.booking.findMany({
+            where: {
+              notary_id: notaryId,
+              deleted_at: null,
+              status: BookingStatus.PENDING_REVIEW,
+              requested_time: { gte: from, lt: to },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    for (const j of jobs) {
+      const jEnd = (
+        j.scanback_ends_at ??
+        j.signing_ends_at ??
+        new Date(
+          j.appointment_time.getTime() + j.signing_duration_mins * 60_000,
+        )
+      ).getTime();
+      if (
+        this.overlapsBlock(
+          candidateStart.getTime(),
+          candidateEnd,
+          bufferMins * 60_000,
+          j.appointment_time.getTime(),
+          jEnd,
+        )
+      )
+        return true;
+    }
+    for (const pb of pending) {
+      const svc = options?.services?.find(
+        (s) => s.signing_type === pb.service_type,
+      );
+      const blockMins = (svc?.duration_mins ?? 60) + (svc?.scanback_mins ?? 0);
+      const start = pb.requested_time.getTime();
+      if (
+        this.overlapsBlock(
+          candidateStart.getTime(),
+          candidateEnd,
+          bufferMins * 60_000,
+          start,
+          start + blockMins * 60_000,
+        )
+      )
+        return true;
+    }
+    return false;
+  }
+
+  /** Short human booking reference, e.g. "ND-2608-44821". */
+  private generateBookingRef(notaryId: string): string {
+    const now = new Date();
+    const yymm = `${String(now.getFullYear()).slice(-2)}${String(
+      now.getMonth() + 1,
+    ).padStart(2, '0')}`;
+    let h = 2166136261;
+    const seed = `${notaryId}:${now.getTime()}:${Math.random()}`;
+    for (let i = 0; i < seed.length; i++) {
+      h ^= seed.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    const num = Math.abs(h) % 100000;
+    return `ND-${yymm}-${String(num).padStart(5, '0')}`;
+  }
+
+  private alternativeNote(dayOffset: number, time: string): string {
+    if (dayOffset === 0) return 'First available after existing jobs';
+    const hour = Number(time.slice(0, 2));
+    if (hour < 12) return 'Morning slot';
+    if (hour < 17) return 'Afternoon slot';
+    return 'Evening slot';
   }
 
   private publicNotaryInfo(
@@ -720,6 +988,7 @@ export class BookingService {
       booking_page_services: unknown;
       booking_page_active_hours: unknown;
       booking_min_notice_hours: number | null;
+      timezone?: string | null;
     },
   ) {
     const activeHours = settings.booking_page_active_hours as Record<
@@ -740,7 +1009,22 @@ export class BookingService {
         ? normalizedHours
         : null,
       min_notice_hours: settings.booking_min_notice_hours ?? null,
+      timezone: settings.timezone ?? null,
+      timezone_abbr: this.timezoneAbbr(settings.timezone),
     };
+  }
+
+  private timezoneAbbr(timezone?: string | null): string | null {
+    if (!timezone) return null;
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        timeZoneName: 'short',
+      }).formatToParts(new Date());
+      return parts.find((p) => p.type === 'timeZoneName')?.value ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**

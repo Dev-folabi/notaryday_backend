@@ -25,6 +25,7 @@ import {
   CreateBookingDto,
   DeclineBookingDto,
   GetSlotsQueryDto,
+  GetAlternativesQueryDto,
 } from './dto/booking.dto';
 import { BookingStatus } from '../../../generated/prisma';
 
@@ -61,6 +62,41 @@ export class BookingController {
     const result = await this.bookings.getSlots(
       username,
       query.date,
+      query.service_type,
+    );
+    return { success: true, data: result };
+  }
+
+  @Get('book/:username/alternatives')
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @ApiOperation({
+    summary: 'Suggest alternative slots near a requested time (public)',
+  })
+  @ApiParam({ name: 'username', example: 'janenotary' })
+  @ApiQuery({ name: 'date', required: true, example: '2025-06-02' })
+  @ApiQuery({ name: 'time', required: true, example: '14:00' })
+  @ApiQuery({
+    name: 'service_type',
+    required: false,
+    enum: [
+      'GENERAL',
+      'LOAN_REFI',
+      'HYBRID',
+      'PURCHASE_CLOSING',
+      'FIELD_INSPECTION',
+      'APOSTILLE',
+    ],
+  })
+  @ApiResponse({ status: 200, description: 'Alternative time slots' })
+  async getAlternatives(
+    @Param('username') username: string,
+    @Query() query: GetAlternativesQueryDto,
+  ) {
+    const result = await this.bookings.suggestAlternatives(
+      username,
+      query.date,
+      query.time,
       query.service_type,
     );
     return { success: true, data: result };
