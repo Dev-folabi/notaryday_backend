@@ -617,20 +617,38 @@ export class BookingService {
       }
     }
 
-    // Conflict check: any day job whose block (incl. scanback + buffer) or
-    // approach drive overlaps this booking's block.
+    // Conflict check: any day job whose block (incl. scanback + buffer) overlaps
+    // this booking's block, or where there's insufficient drive time.
+
     const conflictingJobs = dayJobs.filter((j) => {
       const jStart = j.appointment_time.getTime();
       const jEnd = this.jobBlockEnd(j);
-      const driveOverlap =
-        driveTimeMins != null &&
-        jStart - appt < driveTimeMins * 60_000 &&
-        jStart >= appt;
+
+      // Direct block overlap (works for both before and after jobs)
       const blockOverlap = !(
-        blockEnd + buffer * 60_000 <= jStart ||
-        appt - (driveTimeMins ?? 0) * 60_000 >= jEnd + buffer * 60_000
+        blockEnd + buffer * 60_000 <= jStart || jEnd + buffer * 60_000 <= appt
       );
-      return driveOverlap || blockOverlap;
+      if (blockOverlap) return true;
+      if (jStart > blockEnd) {
+        const driveToNext =
+          j.drive_from_prev_mins != null ? j.drive_from_prev_mins : 0;
+        if (
+          driveToNext > 0 &&
+          blockEnd + buffer * 60_000 + driveToNext * 60_000 > jStart
+        ) {
+          return true;
+        }
+      }
+
+      // For the job immediately BEFORE the booking: check we can depart in time.
+      // driveTimeMins is the drive from that origin to this booking.
+      if (driveTimeMins != null && jStart < appt) {
+        const jIsImmediatePrev =
+          jEnd + buffer * 60_000 + driveTimeMins * 60_000 > appt;
+        if (jIsImmediatePrev) return true;
+      }
+
+      return false;
     });
 
     const irsRate = Number(settings.irs_rate_per_mile ?? 0.67);
@@ -761,9 +779,9 @@ export class BookingService {
     const totalBlock = duration + scanback;
     const buffer = settings.booking_buffer_mins ?? 0;
 
-    // Load confirmed jobs + pending requests for the date
     const nextDay = new Date(day);
     nextDay.setDate(nextDay.getDate() + 1);
+    const lookbackStart = new Date(day.getTime() - 6 * 60 * 60_000);
     const [jobs, pending] = await Promise.all([
       this.prisma.job.findMany({
         where: {
@@ -776,7 +794,7 @@ export class BookingService {
               JobStatus.SCANNING,
             ],
           },
-          appointment_time: { gte: day, lt: nextDay },
+          appointment_time: { gte: lookbackStart, lt: nextDay },
         },
         orderBy: { appointment_time: 'asc' },
       }),
@@ -785,7 +803,7 @@ export class BookingService {
           notary_id: notaryId,
           deleted_at: null,
           status: BookingStatus.PENDING_REVIEW,
-          requested_time: { gte: day, lt: nextDay },
+          requested_time: { gte: lookbackStart, lt: nextDay },
         },
       }),
     ]);
