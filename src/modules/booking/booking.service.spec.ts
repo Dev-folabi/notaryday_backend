@@ -224,7 +224,7 @@ describe('BookingService', () => {
       ).rejects.toThrow(new BadRequestException('Booking page is not active'));
     });
 
-    it('enforces minimum notice hours', async () => {
+    it('rejects minimum notice hours', async () => {
       prisma.user.findUnique.mockResolvedValue(PRO_USER);
       settingsService.get.mockResolvedValue(
         makeSettings({ booking_min_notice_hours: 24 }),
@@ -237,6 +237,19 @@ describe('BookingService', () => {
       ).rejects.toThrow(
         new BadRequestException('Bookings require at least 24 hour(s) notice'),
       );
+    });
+
+    it('rejects a requested time in the past (even with zero notice)', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      settingsService.get.mockResolvedValue(
+        makeSettings({ booking_min_notice_hours: 0 }),
+      );
+      await expect(
+        service.create(
+          'janenotary',
+          dto(new Date(Date.now() - 3600000).toISOString()),
+        ),
+      ).rejects.toThrow(new BadRequestException('Booking time is in the past'));
     });
 
     it('enforces the advance booking limit', async () => {
@@ -483,6 +496,39 @@ describe('BookingService', () => {
       expect(slotTimes).not.toContain(10 * 60);
       expect(slotTimes).not.toContain(11 * 60 + 30);
       expect(slotTimes).toContain(12 * 60);
+    });
+
+    it('still blocks the scanback window when scanback_ends_at is stale from an earlier schedule', async () => {
+      // Job was scheduled at 10:00 (scanback_ends_at anchored there) then moved
+      // to 12:00 without the anchor being refreshed. The block must be derived
+      // from the current 12:00 window so slots inside 12:00-13:20 stay hidden.
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const date = nextWeekday(1); // a Monday
+      const monday = new Date(`${date}T00:00:00`);
+
+      prisma.job.findMany.mockResolvedValue([
+        {
+          id: 'job-moved',
+          appointment_time: new Date(monday.getTime() + 12 * 3600000),
+          signing_duration_mins: 60,
+          scanback_duration_mins: 20,
+          signing_ends_at: new Date(monday.getTime() + 13 * 3600000),
+          scanback_ends_at: new Date(
+            monday.getTime() + 10 * 3600000 + 80 * 60000,
+          ),
+        },
+      ]);
+
+      const result = await service.getSlots('janenotary', date);
+      const slotTimes = result.slots.map((slot: { time: string }) => {
+        const [hh, mm] = slot.time.split(':').map(Number);
+        return hh * 60 + mm;
+      });
+      // Derived block 12:00-13:20 + 15 min buffer = 13:35 => 12:00 and 12:30
+      // are blocked despite the stale anchor at 11:20.
+      expect(slotTimes).not.toContain(12 * 60);
+      expect(slotTimes).not.toContain(12 * 60 + 30);
+      expect(slotTimes).toContain(14 * 60);
     });
 
     it('filters slots inside the minimum-notice window', async () => {

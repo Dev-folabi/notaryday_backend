@@ -114,6 +114,9 @@ export class BookingService {
       throw new BadRequestException('Booking page is not active');
 
     const requestedTime = new Date(dto.requested_time);
+    if (requestedTime.getTime() < Date.now()) {
+      throw new BadRequestException('Booking time is in the past');
+    }
     const minNoticeMs = (settings.booking_min_notice_hours ?? 0) * 60 * 60_000;
     const advanceLimitMs =
       (settings.booking_advance_limit_days ?? 0) * 24 * 60 * 60_000;
@@ -875,20 +878,18 @@ export class BookingService {
     signing_duration_mins: number;
     scanback_duration_mins: number;
   }): number {
-    if (job.scanback_ends_at) return job.scanback_ends_at.getTime();
     const start = job.appointment_time.getTime();
-    const blockMins =
-      (job.signing_duration_mins ?? 0) + (job.scanback_duration_mins ?? 0);
-    if (blockMins > 0) return start + blockMins * 60_000;
-    return (job.signing_ends_at ?? new Date(start + 60 * 60_000)).getTime();
+    const derived =
+      start +
+      ((job.signing_duration_mins ?? 0) + (job.scanback_duration_mins ?? 0)) *
+        60_000;
+    return Math.max(
+      derived,
+      job.signing_ends_at ? job.signing_ends_at.getTime() : 0,
+      job.scanback_ends_at ? job.scanback_ends_at.getTime() : 0,
+    );
   }
 
-  /**
-   * True when the candidate block collides with a confirmed/in-progress job or
-   * (when includePending) an existing PENDING_REVIEW request for the notary.
-   * Accepts an optional transaction client so the check runs inside the same
-   * serializable transaction as the insert.
-   */
   private async isSlotBlockTaken(
     notaryId: string,
     candidateStart: Date,
