@@ -134,9 +134,25 @@ export class BookingService {
 
     const geo = await this.geocoding.geocode(dto.address);
 
-    // Estimate travel fee
+    // Get fee from the client's quote when provided; otherwise fall back to
+    // the configured service base fee.
+    const services = this.normalizeServices(settings.booking_page_services);
+    const service = services.find((s) => s.signing_type === dto.service_type);
+    const clientFeeProvided =
+      typeof dto.base_fee === 'number' && dto.base_fee > 0;
+    const baseFee = clientFeeProvided
+      ? dto.base_fee!
+      : (service?.base_fee ?? 75);
+
+    // Estimate travel fee (only when the client didn't quote a total — when
+    // they did, that amount already covers the whole booking).
     let travelFee = 0;
-    if (geo && settings.home_base_lat && settings.home_base_lng) {
+    if (
+      !clientFeeProvided &&
+      geo &&
+      settings.home_base_lat &&
+      settings.home_base_lng
+    ) {
       const route = await this.ors.getRoute(
         Number(settings.home_base_lat),
         Number(settings.home_base_lng),
@@ -151,10 +167,6 @@ export class BookingService {
       }
     }
 
-    // Get base fee from services config
-    const services = this.normalizeServices(settings.booking_page_services);
-    const service = services.find((s) => s.signing_type === dto.service_type);
-    const baseFee = service?.base_fee ?? 75;
     const totalBlockMins =
       (service?.duration_mins ?? 60) + (service?.scanback_mins ?? 0);
     const bufferMins = settings.booking_buffer_mins ?? 0;
@@ -606,11 +618,7 @@ export class BookingService {
     // approach drive overlaps this booking's block.
     const conflictingJobs = dayJobs.filter((j) => {
       const jStart = j.appointment_time.getTime();
-      const jEnd = (
-        j.scanback_ends_at ??
-        j.signing_ends_at ??
-        new Date(jStart + j.signing_duration_mins * 60_000)
-      ).getTime();
+      const jEnd = this.jobBlockEnd(j);
       const driveOverlap =
         driveTimeMins != null &&
         jStart - appt < driveTimeMins * 60_000 &&
@@ -783,13 +791,7 @@ export class BookingService {
     for (const j of jobs) {
       occupied.push({
         start: j.appointment_time.getTime(),
-        end: (
-          j.scanback_ends_at ??
-          j.signing_ends_at ??
-          new Date(
-            j.appointment_time.getTime() + j.signing_duration_mins * 60_000,
-          )
-        ).getTime(),
+        end: this.jobBlockEnd(j),
       });
     }
     for (const pb of pending) {
@@ -866,6 +868,21 @@ export class BookingService {
     );
   }
 
+  private jobBlockEnd(job: {
+    appointment_time: Date;
+    signing_ends_at: Date | null;
+    scanback_ends_at: Date | null;
+    signing_duration_mins: number;
+    scanback_duration_mins: number;
+  }): number {
+    if (job.scanback_ends_at) return job.scanback_ends_at.getTime();
+    const start = job.appointment_time.getTime();
+    const blockMins =
+      (job.signing_duration_mins ?? 0) + (job.scanback_duration_mins ?? 0);
+    if (blockMins > 0) return start + blockMins * 60_000;
+    return (job.signing_ends_at ?? new Date(start + 60 * 60_000)).getTime();
+  }
+
   /**
    * True when the candidate block collides with a confirmed/in-progress job or
    * (when includePending) an existing PENDING_REVIEW request for the notary.
@@ -918,13 +935,7 @@ export class BookingService {
     ]);
 
     for (const j of jobs) {
-      const jEnd = (
-        j.scanback_ends_at ??
-        j.signing_ends_at ??
-        new Date(
-          j.appointment_time.getTime() + j.signing_duration_mins * 60_000,
-        )
-      ).getTime();
+      const jEnd = this.jobBlockEnd(j);
       if (
         this.overlapsBlock(
           candidateStart.getTime(),

@@ -280,6 +280,29 @@ describe('BookingService', () => {
       expect(result).toBe(created);
     });
 
+    it('uses the client-quoted base fee and skips the travel estimate when base_fee is provided', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const created = {
+        id: 'bk-2',
+        notary_id: 'notary-1',
+        status: BookingStatus.PENDING_REVIEW,
+        base_fee: 200,
+        travel_fee_estimate: 0,
+      };
+      tx.booking.create.mockResolvedValue(created);
+
+      const result = await service.create('janenotary', {
+        ...dto(new Date(Date.now() + 86400000).toISOString()),
+        base_fee: 200,
+      });
+      const createArg = (
+        tx.booking.create.mock.calls as [Record<string, unknown>][]
+      )[0][0] as { data: Record<string, unknown> };
+      expect(createArg.data.base_fee).toBe(200);
+      expect(createArg.data.travel_fee_estimate).toBe(0);
+      expect(result).toMatchObject({ base_fee: 200, travel_fee_estimate: 0 });
+    });
+
     it('rejects when the slot was just claimed by a pending request (race)', async () => {
       prisma.user.findUnique.mockResolvedValue(PRO_USER);
       const requestedTime = new Date(Date.now() + 86400000);
@@ -432,6 +455,34 @@ describe('BookingService', () => {
         min_notice_hours: 0,
       });
       expect(Array.isArray(result.notary!.services)).toBe(true);
+    });
+
+    it('blocks the scanback window even when scanback_ends_at is not persisted', async () => {
+      prisma.user.findUnique.mockResolvedValue(PRO_USER);
+      const date = nextWeekday(1); // a Monday
+      const monday = new Date(`${date}T00:00:00`);
+
+      prisma.job.findMany.mockResolvedValue([
+        {
+          id: 'job-scb',
+          appointment_time: new Date(monday.getTime() + 10 * 3600000),
+          signing_duration_mins: 60,
+          scanback_duration_mins: 20,
+          signing_ends_at: new Date(monday.getTime() + 11 * 3600000),
+          scanback_ends_at: null,
+        },
+      ]);
+
+      const result = await service.getSlots('janenotary', date);
+      const slotTimes = result.slots.map((slot: { time: string }) => {
+        const [hh, mm] = slot.time.split(':').map(Number);
+        return hh * 60 + mm;
+      });
+      // Job runs 10:00-11:20 when scanback duration is included (+15 min
+      // buffer = 11:35), so 11:30 must ALSO be blocked, not just 10:00.
+      expect(slotTimes).not.toContain(10 * 60);
+      expect(slotTimes).not.toContain(11 * 60 + 30);
+      expect(slotTimes).toContain(12 * 60);
     });
 
     it('filters slots inside the minimum-notice window', async () => {

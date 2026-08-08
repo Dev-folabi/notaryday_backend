@@ -4,6 +4,8 @@ import {
   IsOptional,
   IsDateString,
   IsEmail,
+  IsNumber,
+  Min,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -48,6 +50,15 @@ export class CreateBookingDto {
   @IsOptional()
   @MaxLength(1000)
   notes?: string;
+
+  @ApiPropertyOptional({
+    example: 150,
+    description: 'Total fee the client agrees to pay for the signing',
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  base_fee?: number;
 }
 
 export class DeclineBookingDto {

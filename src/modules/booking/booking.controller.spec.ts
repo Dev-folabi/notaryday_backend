@@ -128,11 +128,17 @@ describe('BookingController', () => {
     expect(service.decline).toHaveBeenCalledWith('notary-1', 'bk-1', {
       reason: 'Busy',
     });
-    expect(result).toEqual({ success: true, data: { id: 'bk-1', status: 'DECLINED' } });
+    expect(result).toEqual({
+      success: true,
+      data: { id: 'bk-1', status: 'DECLINED' },
+    });
   });
 
   it('delegates cancel and wraps the response', async () => {
-    service.cancel.mockResolvedValue({ id: 'bk-1', status: 'CANCELLED_BY_CLIENT' });
+    service.cancel.mockResolvedValue({
+      id: 'bk-1',
+      status: 'CANCELLED_BY_CLIENT',
+    });
     const result = await controller.cancel('notary-1', 'bk-1');
     expect(service.cancel).toHaveBeenCalledWith('notary-1', 'bk-1');
     expect(result).toEqual({
