@@ -10,6 +10,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { QUEUE_INVOICE } from '../../queues/queue.constants';
+import { UpdateInvoiceDto } from './dto/invoice.dto';
 import { JobStatus, Prisma } from '../../../generated/prisma';
 
 @Injectable()
@@ -23,7 +24,6 @@ export class InvoicesService {
     @InjectQueue(QUEUE_INVOICE) private readonly invoiceQueue: Queue,
   ) {}
 
-  /** Generate invoice for a completed job — queues PDF generation */
   async generate(userId: string, jobId: string) {
     const job = await this.prisma.job.findFirst({
       where: { id: jobId, user_id: userId, deleted_at: null },
@@ -41,16 +41,40 @@ export class InvoicesService {
     const recipientName = job.client_name ?? job.platform_name ?? null;
 
     if (existing) {
-      // Refresh recipient details from the (possibly updated) job so the
-      // invoice always reflects the latest client email/name.
-      const updated = await this.prisma.invoice.update({
+      await this.prisma.invoice.update({
         where: { id: existing.id },
         data: {
           recipient_email: recipientEmail || existing.recipient_email,
           recipient_name: recipientName ?? existing.recipient_name,
         },
       });
-      return updated;
+      if (!existing.pdf_url && !existing.pdf_pending) {
+        await this.prisma.invoice.update({
+          where: { id: existing.id },
+          data: { pdf_pending: true },
+        });
+        await this.enqueue('generate-pdf', {
+          invoiceId: existing.id,
+          userId,
+        });
+      }
+      return this.prisma.invoice.findFirst({
+        where: { id: existing.id },
+        include: {
+          job: {
+            select: {
+              address: true,
+              signing_type: true,
+              appointment_time: true,
+              fee: true,
+              platform_fee: true,
+              net_earnings: true,
+              mileage_cost: true,
+              client_name: true,
+            },
+          },
+        },
+      });
     }
 
     // Get next invoice number
@@ -81,30 +105,11 @@ export class InvoicesService {
       },
     });
 
-    const enqueue = (name: string, data: Record<string, unknown>) =>
-      Promise.race([
-        this.invoiceQueue.add(name, data),
-        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-      ]).catch((err) => {
-        this.logger.warn(
-          `Invoice queue enqueue failed for ${name} (invoice ${invoice.id}): ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      });
-
     await this.prisma.invoice.update({
       where: { id: invoice.id },
       data: { pdf_pending: true },
     });
-    await enqueue('generate-pdf', { invoiceId: invoice.id, userId });
-    if (recipientEmail && recipientEmail.includes('@')) {
-      await this.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { email_pending: true },
-      });
-      await enqueue('send-email', { invoiceId: invoice.id, userId });
-    }
+    await this.enqueue('generate-pdf', { invoiceId: invoice.id, userId });
 
     return this.prisma.invoice.findFirst({
       where: { id: invoice.id },
@@ -122,6 +127,21 @@ export class InvoicesService {
           },
         },
       },
+    });
+  }
+
+  /** Best-effort enqueue that never blocks or fails the request on a slow/down
+   *  Redis. If the add is lost the task is retried manually, not by cron. */
+  private async enqueue(name: string, data: Record<string, unknown>) {
+    await Promise.race([
+      this.invoiceQueue.add(name, data),
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ]).catch((err) => {
+      this.logger.warn(
+        `Invoice queue failed for ${name} (${String(
+          (data.invoiceId as string) ?? (data.jobId as string) ?? 'unknown',
+        )}): ${err instanceof Error ? err.message : String(err)}`,
+      );
     });
   }
 
@@ -214,38 +234,52 @@ export class InvoicesService {
     return updated;
   }
 
-  /** Queue email send for an existing invoice */
+  /** Queue email send for an existing invoice (only on manual "Send"/"Resend" —
+   *  never automatic, and never re-enqueued by a cron afterwards). */
   async send(userId: string, id: string, recipientEmail?: string) {
     const invoice = await this.findOne(userId, id);
 
-    if (!invoice) throw new NotFoundException('Invoice not found');
-
-    if (recipientEmail) {
-      await this.prisma.invoice.update({
-        where: { id },
-        data: { recipient_email: recipientEmail },
-      });
-    }
-    // Best-effort: never let a slow/down Redis block or fail the response.
-    // Mark pending so the retry cron re-enqueues if this add is lost.
-    await this.prisma.invoice.update({
-      where: { id },
-      data: { email_pending: true },
-    });
-    await Promise.race([
-      this.invoiceQueue.add('send-email', { invoiceId: id, userId }),
-      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-    ]).catch((err) => {
-      this.logger.warn(
-        `Invoice resend enqueue failed for ${id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+    const email = recipientEmail?.trim() || invoice.recipient_email?.trim();
+    if (!email || !email.includes('@')) {
+      throw new BadRequestException(
+        'A valid recipient email is required to send the invoice',
       );
-    });
+    }
+
     await this.prisma.invoice.update({
       where: { id },
-      data: { sent_at: new Date() },
+      data: { recipient_email: email, email_pending: true },
     });
-    return { sent: true };
+
+    await this.enqueue('send-email', { invoiceId: id, userId });
+    return { queued: true };
+  }
+
+  /** Update editable "before you send" fields on an existing draft invoice */
+  async update(userId: string, id: string, dto: UpdateInvoiceDto) {
+    const invoice = await this.findOne(userId, id);
+
+    const data: Prisma.InvoiceUpdateInput = {};
+    const email = dto.recipient_email;
+    if (email !== undefined) data.recipient_email = email;
+    if (dto.note_to_client !== undefined)
+      data.note_to_client = dto.note_to_client;
+
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data,
+    });
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { pdf_pending: true },
+    });
+    await this.enqueue('generate-pdf', {
+      invoiceId: invoice.id,
+      userId,
+      reason: 'updated',
+    });
+
+    return updated;
   }
 }

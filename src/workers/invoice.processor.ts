@@ -78,13 +78,21 @@ export class InvoiceProcessor {
       doc.text(`Travel Fee: $${invoice.travel_fee.toString()}`);
       doc.fontSize(14).text(`Total Due: $${invoice.total.toString()}`);
 
+      if (invoice.note_to_client) {
+        doc.moveDown(2);
+        doc.fontSize(10).text('Note:');
+        doc.fontSize(10).text(invoice.note_to_client);
+      }
+
       doc.end();
     });
   }
 
   @Process('generate-pdf')
-  async handleGeneratePdf(job: Job<{ invoiceId: string; userId: string }>) {
-    const { invoiceId, userId } = job.data;
+  async handleGeneratePdf(
+    job: Job<{ invoiceId: string; userId: string; reason?: string }>,
+  ) {
+    const { invoiceId, userId, reason } = job.data;
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: { job: true },
@@ -102,6 +110,7 @@ export class InvoiceProcessor {
           Key: objectKey,
           Body: pdfBuffer,
           ContentType: 'application/pdf',
+          ContentDisposition: `attachment; filename="${invoice.invoice_number}.pdf"`,
         }),
       );
 
@@ -124,6 +133,13 @@ export class InvoiceProcessor {
       this.logger.error(
         `Failed to generate/upload PDF for ${invoice.invoice_number}: ${errorMessage}`,
       );
+    }
+
+    if (reason === 'updated') {
+      this.logger.log(
+        `Invoice ${invoice.invoice_number} PDF regenerated after edit`,
+      );
+      return;
     }
 
     await this.prisma.notification.create({

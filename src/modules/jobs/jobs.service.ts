@@ -27,6 +27,7 @@ import {
 } from '../../queues/queue.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JournalService } from '../journal/journal.service';
+import { InvoicesService } from '../invoices/invoices.service';
 
 // Signing types that mandate scanback
 const SCANBACK_TYPES = new Set<SigningType>([
@@ -63,6 +64,7 @@ export class JobsService {
     private readonly notifications: NotificationsService,
     private readonly journal: JournalService,
     private readonly ors: OrsService,
+    private readonly invoices: InvoicesService,
     @InjectQueue(QUEUE_CALENDAR_SYNC)
     private readonly calendarSyncQueue: Queue,
     @InjectQueue(QUEUE_NOTIFICATION)
@@ -485,6 +487,17 @@ export class JobsService {
       } catch (err) {
         this.logger.error(
           `Failed to auto-create journal entry for completed job ${job.id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+
+    if (newStatus === JobStatus.COMPLETE) {
+      try {
+        await this.invoices.generate(userId, job.id);
+      } catch (err) {
+        this.logger.error(
+          `Failed to auto-generate draft invoice for completed job ${job.id}`,
           err instanceof Error ? err.stack : String(err),
         );
       }

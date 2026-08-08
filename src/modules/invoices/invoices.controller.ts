@@ -19,7 +19,11 @@ import {
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { InvoicesService } from './invoices.service';
-import { MarkPaidDto, SendInvoiceDto } from './dto/invoice.dto';
+import {
+  MarkPaidDto,
+  SendInvoiceDto,
+  UpdateInvoiceDto,
+} from './dto/invoice.dto';
 
 @ApiTags('Invoices')
 @ApiBearerAuth()
@@ -105,6 +109,23 @@ export class InvoicesController {
     return {
       success: true,
       data: await this.invoices.markPaid(userId, id, dto.payment_method_used),
+    };
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Update editable invoice fields (recipient email, note to client)',
+  })
+  @ApiParam({ name: 'id', description: 'Invoice UUID' })
+  @ApiResponse({ status: 200, description: 'Invoice updated' })
+  async update(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateInvoiceDto,
+  ) {
+    return {
+      success: true,
+      data: await this.invoices.update(userId, id, dto),
     };
   }
 

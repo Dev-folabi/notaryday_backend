@@ -17,3 +17,21 @@ export class SendInvoiceDto {
   @IsOptional()
   recipient_email?: string;
 }
+
+export class UpdateInvoiceDto {
+  @ApiPropertyOptional({
+    example: 'client@example.com',
+    description: 'Recipient email for the invoice',
+  })
+  @IsString()
+  @IsOptional()
+  recipient_email?: string;
+
+  @ApiPropertyOptional({
+    example: 'Thank you for your business',
+    description: 'Note shown to the client on the invoice before sending',
+  })
+  @IsString()
+  @IsOptional()
+  note_to_client?: string;
+}
