@@ -136,7 +136,7 @@ export class InvoicesService {
     await Promise.race([
       this.invoiceQueue.add(name, data),
       new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-    ]).catch((err) => {
+    ]).catch((err: unknown) => {
       this.logger.warn(
         `Invoice queue failed for ${name} (${String(
           (data.invoiceId as string) ?? (data.jobId as string) ?? 'unknown',
@@ -260,10 +260,20 @@ export class InvoicesService {
     const invoice = await this.findOne(userId, id);
 
     const data: Prisma.InvoiceUpdateInput = {};
-    const email = dto.recipient_email;
-    if (email !== undefined) data.recipient_email = email;
-    if (dto.note_to_client !== undefined)
+    if (dto.recipient_email !== undefined) {
+      data.recipient_email = dto.recipient_email;
+    }
+    if (dto.recipient_name !== undefined) {
+      data.recipient_name = dto.recipient_name;
+    }
+    if (dto.note_to_client !== undefined) {
       data.note_to_client = dto.note_to_client;
+    }
+    if (dto.final_fee !== undefined) {
+      const finalFee = Number(dto.final_fee);
+      data.subtotal = finalFee;
+      data.total = finalFee + Number(invoice.travel_fee ?? 0);
+    }
 
     const updated = await this.prisma.invoice.update({
       where: { id: invoice.id },

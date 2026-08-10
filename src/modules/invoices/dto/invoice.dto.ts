@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class MarkPaidDto {
@@ -20,12 +20,29 @@ export class SendInvoiceDto {
 
 export class UpdateInvoiceDto {
   @ApiPropertyOptional({
+    example: 'Marcus Johnson',
+    description: 'Billable client name shown on the invoice',
+  })
+  @IsString()
+  @IsOptional()
+  recipient_name?: string;
+
+  @ApiPropertyOptional({
     example: 'client@example.com',
     description: 'Recipient email for the invoice',
   })
   @IsString()
   @IsOptional()
   recipient_email?: string;
+
+  @ApiPropertyOptional({
+    example: '150',
+    description: 'Final fee amount — overrides the agreed job fee',
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  final_fee?: number;
 
   @ApiPropertyOptional({
     example: 'Thank you for your business',
