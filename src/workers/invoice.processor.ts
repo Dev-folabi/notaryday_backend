@@ -9,7 +9,9 @@ import PDFDocument from 'pdfkit';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Prisma } from '../../generated/prisma';
 
-type InvoiceWithJob = Prisma.InvoiceGetPayload<{ include: { job: true } }>;
+type InvoiceWithJob = Prisma.InvoiceGetPayload<{
+  include: { job: true; user: { include: { settings: true } } };
+}>;
 
 @Processor(QUEUE_INVOICE)
 export class InvoiceProcessor {
@@ -74,9 +76,51 @@ export class InvoiceProcessor {
       );
       doc.moveDown(2);
 
-      doc.text(`Subtotal: $${invoice.subtotal.toString()}`);
-      doc.text(`Travel Fee: $${invoice.travel_fee.toString()}`);
-      doc.fontSize(14).text(`Total Due: $${invoice.total.toString()}`);
+      doc.text(`Subtotal: $${Number(invoice.total).toFixed(2)}`);
+      doc.text(`Tax: $0.00`);
+      doc.fontSize(14).text(`Total Due: $${Number(invoice.total).toFixed(2)}`);
+
+      // Payment details from user settings
+      const paymentInfo = invoice.user.settings?.payment_info;
+      const paymentLines: string[] = [];
+      if (typeof paymentInfo === 'string') {
+        paymentLines.push(paymentInfo);
+      } else if (
+        typeof paymentInfo === 'object' &&
+        paymentInfo !== null &&
+        !Array.isArray(paymentInfo)
+      ) {
+        const info = paymentInfo as Record<string, unknown>;
+        if (typeof info.bank_name === 'string' && info.bank_name) {
+          const last4 =
+            typeof info.account_last4 === 'string' && info.account_last4
+              ? ` ending in ${info.account_last4}`
+              : '';
+          paymentLines.push(`${info.bank_name}${last4}`);
+        }
+        const labeled: [string, string][] = [
+          ['zelle', 'Zelle'],
+          ['venmo', 'Venmo'],
+          ['paypal', 'PayPal'],
+        ];
+        for (const [key, label] of labeled) {
+          const v = info[key];
+          if (typeof v === 'string' && v) paymentLines.push(`${label}: ${v}`);
+        }
+        if (typeof info.routing_last4 === 'string' && info.routing_last4) {
+          paymentLines.push(`Routing: ••••${info.routing_last4}`);
+        }
+        if (typeof info.other === 'string' && info.other) {
+          paymentLines.push(info.other);
+        }
+      }
+
+      if (paymentLines.length > 0) {
+        doc.moveDown(2);
+        doc.fontSize(12).text('Payment Details:');
+        doc.fontSize(10);
+        for (const line of paymentLines) doc.text(line);
+      }
 
       if (invoice.note_to_client) {
         doc.moveDown(2);
@@ -95,7 +139,7 @@ export class InvoiceProcessor {
     const { invoiceId, userId, reason } = job.data;
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      include: { job: true },
+      include: { job: true, user: { include: { settings: true } } },
     });
     if (!invoice) return;
 

@@ -255,9 +255,13 @@ export class InvoicesService {
     return { queued: true };
   }
 
-  /** Update editable "before you send" fields on an existing draft invoice */
+  /** Update editable fields on an existing invoice */
   async update(userId: string, id: string, dto: UpdateInvoiceDto) {
     const invoice = await this.findOne(userId, id);
+
+    if (invoice.is_paid && dto.final_fee !== undefined) {
+      throw new BadRequestException('Paid invoices cannot change the amount');
+    }
 
     const data: Prisma.InvoiceUpdateInput = {};
     if (dto.recipient_email !== undefined) {

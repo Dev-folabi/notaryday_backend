@@ -28,6 +28,43 @@ export class UserSettingsService {
     return out;
   }
 
+  /**
+   * Coerce arbitrary user-supplied payment_info JSON into the canonical shape
+   * { zelle?, venmo?, paypal?, bank_name?, account_last4?, routing_last4?,
+   * other? }. Unknown keys are dropped; string values are kept as-is; other
+   * scalars are stringified; a non-object (e.g. a plain string like
+   * "Zelle: sarah@email.com") is stored under `other` so nothing is lost.
+   */
+  private normalizePaymentInfo(value: unknown): Prisma.InputJsonValue {
+    if (typeof value === 'string') {
+      return { other: value };
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return { other: String(value) };
+    }
+    const src = value as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    const known = [
+      'zelle',
+      'venmo',
+      'paypal',
+      'bank_name',
+      'account_last4',
+      'routing_last4',
+      'other',
+    ];
+    for (const key of known) {
+      const v = src[key];
+      if (v === undefined || v === null || v === '') continue;
+      if (typeof v === 'string') {
+        out[key] = v;
+      } else if (typeof v === 'number' || typeof v === 'boolean') {
+        out[key] = String(v);
+      }
+    }
+    return out;
+  }
+
   async get(userId: string) {
     let settings = await this.prisma.userSettings.findUnique({
       where: { user_id: userId },
@@ -59,7 +96,7 @@ export class UserSettingsService {
       bookingPageServices?: Prisma.InputJsonValue | Record<string, unknown>[];
       bookingMinNoticeHours?: number;
       bookingAdvanceLimitDays?: number;
-      paymentInfo?: Prisma.InputJsonValue;
+      paymentInfo?: unknown;
       invoiceNotes?: string;
       invoiceDueDays?: number;
       remindersEnabled?: boolean;
@@ -125,7 +162,7 @@ export class UserSettingsService {
     if (data.bookingAdvanceLimitDays !== undefined)
       updateData.booking_advance_limit_days = data.bookingAdvanceLimitDays;
     if (data.paymentInfo !== undefined)
-      updateData.payment_info = data.paymentInfo;
+      updateData.payment_info = this.normalizePaymentInfo(data.paymentInfo);
     if (data.invoiceNotes !== undefined)
       updateData.invoice_notes = data.invoiceNotes;
     if (data.invoiceDueDays !== undefined)

@@ -26,6 +26,7 @@ import {
   IsNumber,
   IsEnum,
   IsArray,
+  IsObject,
 } from 'class-validator';
 import { NavApp } from '../../../generated/prisma';
 import { Type } from 'class-transformer';
@@ -204,6 +205,19 @@ export class UpdateSettingsDto {
     signing_duration_mins: number;
     scanback_duration_mins: number;
   }[];
+
+  @ApiPropertyOptional({
+    example: {
+      zelle: 'sarah@zelle.com',
+      venmo: '@sarah-notary',
+      paypal: 'sarah@paypal.me',
+    },
+    description:
+      'Payment details shown on invoice PDFs so the client can pay directly. Accepts any object shape; only known keys (zelle, venmo, paypal, bank_name, account_last4, routing_last4, other) are kept.',
+  })
+  @IsOptional()
+  @IsObject()
+  paymentInfo?: Record<string, unknown>;
 }
 
 @ApiTags('Users')
@@ -293,6 +307,7 @@ export class UsersController {
       clientEtaEnabled: dto.clientEtaEnabled,
       preferredNavApp: dto.preferredNavApp,
       scanback_duration_mins: dto.scanback_duration_mins,
+      paymentInfo: dto.paymentInfo,
     });
 
     if (dto.signing_defaults && Array.isArray(dto.signing_defaults)) {
