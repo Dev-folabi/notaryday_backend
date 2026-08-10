@@ -276,7 +276,8 @@ export class InvoicesService {
     if (dto.final_fee !== undefined) {
       const finalFee = Number(dto.final_fee);
       data.subtotal = finalFee;
-      data.total = finalFee + Number(invoice.travel_fee ?? 0);
+      data.travel_fee = 0;
+      data.total = finalFee;
     }
 
     const updated = await this.prisma.invoice.update({

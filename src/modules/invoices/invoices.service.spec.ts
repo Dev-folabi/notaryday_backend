@@ -66,7 +66,8 @@ describe('InvoicesService', () => {
           data: expect.objectContaining({
             recipient_name: 'New Client',
             subtotal: 150,
-            total: 160,
+            travel_fee: 0,
+            total: 150,
           }),
         }),
       );
