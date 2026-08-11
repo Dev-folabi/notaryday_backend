@@ -175,15 +175,34 @@ export class InvoicesService {
   async findStats(userId: string) {
     const rows = await this.prisma.invoice.findMany({
       where: { user_id: userId, deleted_at: null },
-      select: { total: true, is_paid: true, sent_at: true },
+      select: {
+        total: true,
+        travel_fee: true,
+        is_paid: true,
+        sent_at: true,
+        job: { select: { fee: true } },
+      },
     });
 
     const now = Date.now();
-    const stats = { billed: 0, paid: 0, outstanding: 0, overdue: 0 };
+    const stats = {
+      billed: 0,
+      paid: 0,
+      outstanding: 0,
+      overdue: 0,
+      // Current (live) job fees for invoiced jobs — invoices store a snapshot
+      // at generation time, so "earned" can diverge from "billed".
+      earned: 0,
+      // Travel/mileage fees captured on the invoices (portion of billed that is
+      // not part of the job's base fee).
+      travelFees: 0,
+    };
 
     for (const row of rows) {
       const total = Number(row.total) || 0;
       stats.billed += total;
+      stats.earned += Number(row.job?.fee ?? 0) || 0;
+      stats.travelFees += Number(row.travel_fee ?? 0) || 0;
       if (row.is_paid) {
         stats.paid += total;
       } else {

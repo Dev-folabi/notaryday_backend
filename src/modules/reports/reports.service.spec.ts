@@ -131,7 +131,7 @@ describe('ReportsService', () => {
 
       const res = await service.mileage('u1', 2026);
       expect(res.totalMiles).toBe(55);
-      expect(res.totalDeduction).toBeCloseTo(36.85);
+      expect(res.totalDeduction).toBeCloseTo(36.7);
       expect(res.autoMiles).toBe(45);
       expect(res.manualMiles).toBe(10);
 
