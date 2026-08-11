@@ -143,6 +143,7 @@ model User {
   day_plans             DayPlan[]
   bookings              Booking[]
   expenses              Expense[]
+  mileage_entries       MileageEntry[]
   journal_entries       JournalEntry[]
   invoices              Invoice[]
   password_reset_tokens PasswordResetToken[]
@@ -511,6 +512,25 @@ model Expense {
   @@index([user_id, expense_date])
   @@index([user_id, category])
   @@map("expenses")
+}
+
+// MANUAL MILEAGE ENTRIES (user-added, not auto-tracked from jobs)
+
+model MileageEntry {
+  id          String  @id @default(cuid())
+  user_id     String
+  user        User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  miles_date  DateTime @db.Timestamptz
+  miles       Decimal  @db.Decimal(8, 2)
+  description String
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  @@index([user_id, miles_date])
+  @@map("mileage_entries")
 }
 
 // NOTARIAL JOURNAL
