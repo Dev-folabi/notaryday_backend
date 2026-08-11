@@ -45,3 +45,23 @@ export class UpdateMileageEntryDto {
   @MaxLength(500)
   description?: string;
 }
+
+export class UpdateJobMileageDto {
+  @ApiPropertyOptional({ example: '2026-03-19' })
+  @IsDateString()
+  @IsOptional()
+  miles_date?: string;
+
+  @ApiPropertyOptional({ example: 48.0 })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  miles?: number;
+
+  @ApiPropertyOptional({ example: 'Updated job address / description' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  description?: string;
+}

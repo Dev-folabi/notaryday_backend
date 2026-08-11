@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
-import { JobStatus } from '../../../generated/prisma';
+import { JobStatus, Prisma } from '../../../generated/prisma';
 import PDFDocument from 'pdfkit';
 
 interface MileageRow {
   id?: string;
+  jobId?: string;
   date: Date;
   address: string;
   miles: number;
@@ -201,6 +202,7 @@ export class ReportsService {
       manualMiles,
       entries: rows.map((r) => ({
         id: r.method === 'manual' ? r.id : undefined,
+        jobId: r.method === 'auto' ? r.jobId : undefined,
         date: r.date,
         job: r.address,
         miles: r.miles,
@@ -251,6 +253,7 @@ export class ReportsService {
 
     const rows: MileageRow[] = [
       ...jobs.map((j) => ({
+        jobId: j.id,
         date: j.appointment_time,
         address: j.address,
         miles: Number(j.mileage_miles),
@@ -317,6 +320,52 @@ export class ReportsService {
       where: { id },
       data: { deleted_at: new Date() },
     });
+  }
+
+  /**
+   * Update an auto-tracked mileage entry by editing the underlying job's
+   * mileage fields directly (no re-geocoding — the address is kept as-is).
+   */
+  async updateJobMileage(
+    userId: string,
+    jobId: string,
+    dto: { miles_date?: string; miles?: number; description?: string },
+  ) {
+    const job = await this.prisma.job.findFirst({
+      where: { id: jobId, user_id: userId, deleted_at: null },
+    });
+    if (!job) throw new NotFoundException('Job not found');
+
+    const irsRate = await this.getIrsRate(userId);
+    const data: Prisma.JobUpdateInput = {};
+
+    if (dto.miles_date) {
+      const next = new Date(dto.miles_date);
+      const prev = job.appointment_time ?? new Date();
+      next.setHours(
+        prev.getHours(),
+        prev.getMinutes(),
+        prev.getSeconds(),
+        prev.getMilliseconds(),
+      );
+      data.appointment_time = next;
+    }
+
+    if (dto.miles !== undefined) {
+      data.mileage_miles = dto.miles;
+      data.mileage_cost =
+        dto.miles > 0 ? Math.round(dto.miles * 2 * irsRate * 100) / 100 : 0;
+    }
+
+    if (dto.description !== undefined) {
+      data.address = dto.description;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return job;
+    }
+
+    return this.prisma.job.update({ where: { id: jobId }, data });
   }
 
   private async findOneMileageEntry(userId: string, id: string) {

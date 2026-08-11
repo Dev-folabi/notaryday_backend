@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { CreateExpenseDto, UpdateExpenseDto } from './dto/expense.dto';
-import { ExpenseCategory } from '../../../generated/prisma';
 
 @Injectable()
 export class ExpensesService {
@@ -19,7 +18,7 @@ export class ExpensesService {
 
   async findAll(
     userId: string,
-    filters?: { category?: ExpenseCategory; from?: string; to?: string },
+    filters?: { category?: string; from?: string; to?: string },
   ) {
     const where: any = { user_id: userId, deleted_at: null };
     if (filters?.category) where.category = filters.category;

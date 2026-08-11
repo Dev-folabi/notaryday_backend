@@ -1,6 +1,6 @@
 import {
   IsString,
-  IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsDateString,
@@ -9,12 +9,23 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ExpenseCategory } from '../../../../generated/prisma';
+
+export const EXPENSE_CATEGORIES = [
+  'Office supplies',
+  'Software',
+  'Vehicle',
+  'Marketing',
+  'Professional dev',
+] as const;
 
 export class CreateExpenseDto {
-  @ApiProperty({ enum: ExpenseCategory, example: 'MILEAGE' })
-  @IsEnum(ExpenseCategory)
-  category: ExpenseCategory;
+  @ApiProperty({
+    enum: EXPENSE_CATEGORIES,
+    example: 'Office supplies',
+    description: 'Expense category label',
+  })
+  @IsIn(EXPENSE_CATEGORIES)
+  category: string;
 
   @ApiProperty({ example: 45.5, description: 'Expense amount in dollars' })
   @IsNumber()
@@ -47,10 +58,10 @@ export class CreateExpenseDto {
 }
 
 export class UpdateExpenseDto {
-  @ApiPropertyOptional({ enum: ExpenseCategory })
-  @IsEnum(ExpenseCategory)
+  @ApiPropertyOptional({ enum: EXPENSE_CATEGORIES })
+  @IsIn(EXPENSE_CATEGORIES)
   @IsOptional()
-  category?: ExpenseCategory;
+  category?: string;
 
   @ApiPropertyOptional({ example: 52.0 })
   @IsNumber()

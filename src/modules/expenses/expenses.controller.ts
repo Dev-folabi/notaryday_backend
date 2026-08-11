@@ -22,8 +22,11 @@ import {
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ExpensesService } from './expenses.service';
-import { CreateExpenseDto, UpdateExpenseDto } from './dto/expense.dto';
-import { ExpenseCategory } from '../../../generated/prisma';
+import {
+  CreateExpenseDto,
+  UpdateExpenseDto,
+  EXPENSE_CATEGORIES,
+} from './dto/expense.dto';
 
 @ApiTags('Expenses')
 @ApiBearerAuth()
@@ -44,7 +47,11 @@ export class ExpensesController {
 
   @Get()
   @ApiOperation({ summary: 'List expenses with optional filters' })
-  @ApiQuery({ name: 'category', required: false, enum: ExpenseCategory })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    enum: EXPENSE_CATEGORIES,
+  })
   @ApiQuery({
     name: 'from',
     required: false,
@@ -60,7 +67,7 @@ export class ExpensesController {
   @ApiResponse({ status: 200, description: 'Array of expenses' })
   async findAll(
     @CurrentUser('id') userId: string,
-    @Query('category') category?: ExpenseCategory,
+    @Query('category') category?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {

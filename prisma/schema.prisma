@@ -74,17 +74,6 @@ enum NotificationType {
   PLAN_CANCELLED
 }
 
-enum ExpenseCategory {
-  MILEAGE
-  SUPPLIES
-  EDUCATION
-  INSURANCE
-  EQUIPMENT
-  MARKETING
-  SOFTWARE
-  OTHER
-}
-
 enum ImportStatus {
   QUEUED
   PROCESSING
@@ -498,7 +487,7 @@ model Expense {
   user_id String
   user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  category     ExpenseCategory
+  category     String          @db.VarChar(50)
   amount       Decimal         @db.Decimal(8, 2)
   description  String
   expense_date DateTime        @db.Date

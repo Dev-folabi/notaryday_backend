@@ -27,6 +27,7 @@ import { ReportsService } from './reports.service';
 import {
   CreateMileageEntryDto,
   UpdateMileageEntryDto,
+  UpdateJobMileageDto,
 } from './dto/mileage-entry.dto';
 
 @ApiTags('Reports')
@@ -125,6 +126,24 @@ export class ReportsController {
     return {
       success: true,
       data: await this.reports.deleteMileageEntry(userId, id),
+    };
+  }
+
+  @Patch('mileage/job/:id')
+  @RequiresPro()
+  @ApiOperation({
+    summary: 'Update an auto-tracked mileage entry via its job',
+  })
+  @ApiParam({ name: 'id', description: 'Job ID backing the auto entry' })
+  @ApiResponse({ status: 200, description: 'Job mileage updated' })
+  async updateJobMileage(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateJobMileageDto,
+  ) {
+    return {
+      success: true,
+      data: await this.reports.updateJobMileage(userId, id, dto),
     };
   }
 
