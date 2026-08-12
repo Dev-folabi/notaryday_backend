@@ -274,10 +274,80 @@ export class InvoicesService {
     return { queued: true };
   }
 
+  /** Auto-sync invoice amounts and recipient details to a job's current state.
+   *  Works for any unpaid invoice (draft or already sent) — only paid invoices
+   *  are locked and keep the amount billed at generation time. */
+  async syncDraftFromJob(
+    userId: string,
+    jobId: string,
+    job: {
+      fee: number | null;
+      mileage_cost: number | null;
+      client_name?: string | null;
+      client_email?: string | null;
+    },
+  ) {
+    const invoice = await this.findByJob(userId, jobId);
+    if (!invoice) return;
+    // Paid invoices are locked — sent/unpaid ones stay in sync.
+    if (invoice.is_paid) return;
+
+    const subtotal = Number(job.fee ?? 0);
+    const travelFee = Number(job.mileage_cost ?? 0);
+    const total = subtotal + travelFee;
+    const recipientName =
+      job.client_name !== undefined ? job.client_name : invoice.recipient_name;
+    const recipientEmail =
+      job.client_email !== undefined && job.client_email !== null
+        ? job.client_email
+        : invoice.recipient_email;
+
+    if (
+      Number(invoice.subtotal) === subtotal &&
+      Number(invoice.travel_fee) === travelFee &&
+      Number(invoice.total) === total &&
+      invoice.recipient_name === recipientName &&
+      invoice.recipient_email === recipientEmail
+    ) {
+      return;
+    }
+
+    const data: Prisma.InvoiceUpdateInput = {
+      subtotal,
+      travel_fee: travelFee,
+      total,
+      ...(job.client_name !== undefined && { recipient_name: job.client_name }),
+      ...(job.client_email !== undefined &&
+        job.client_email !== null && { recipient_email: job.client_email }),
+    };
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data,
+    });
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { pdf_pending: true },
+    });
+    await this.enqueue('generate-pdf', {
+      invoiceId: invoice.id,
+      userId,
+      reason: 'fee-edit-sync',
+    });
+  }
+
+  private async findByJob(userId: string, jobId: string) {
+    return this.prisma.invoice.findFirst({
+      where: { job_id: jobId, user_id: userId, deleted_at: null },
+    });
+  }
+
   /** Update editable fields on an existing invoice */
   async update(userId: string, id: string, dto: UpdateInvoiceDto) {
     const invoice = await this.findOne(userId, id);
 
+    // Only paid invoices lock the amount — sent/unpaid invoices can still be
+    // edited (and auto-synced from the job fee).
     if (invoice.is_paid && dto.final_fee !== undefined) {
       throw new BadRequestException('Paid invoices cannot change the amount');
     }

@@ -200,17 +200,27 @@ export class ReportsController {
 
   @Get('tax/pdf')
   @RequiresPro()
-  @ApiOperation({ summary: 'Generate the Schedule C tax report PDF' })
+  @ApiOperation({
+    summary:
+      'Get the Schedule C tax report PDF (cached; pass regenerate=true to rebuild)',
+  })
   @ApiQuery({ name: 'from', required: true, example: '2026-01-01' })
   @ApiQuery({ name: 'to', required: true, example: '2026-12-31' })
+  @ApiQuery({ name: 'regenerate', required: false, example: 'false' })
   @ApiResponse({ status: 200, description: 'PDF file download' })
   async taxPdf(
     @CurrentUser('id') userId: string,
     @Query('from') from: string,
     @Query('to') to: string,
     @Res() res: Response,
+    @Query('regenerate') regenerate?: string,
   ) {
-    const buffer = await this.reports.taxPdf(userId, from, to);
+    const buffer = await this.reports.taxPdf(
+      userId,
+      from,
+      to,
+      regenerate === 'true',
+    );
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="schedule-c-tax-report.pdf"`,

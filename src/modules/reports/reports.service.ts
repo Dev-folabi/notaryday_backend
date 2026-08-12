@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { JobStatus, Prisma } from '../../../generated/prisma';
 import PDFDocument from 'pdfkit';
+import {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 
 interface MileageRow {
   id?: string;
@@ -13,9 +19,36 @@ interface MileageRow {
   method: 'auto' | 'manual';
 }
 
+const TYPE_LABEL: Record<string, string> = {
+  LOAN_REFI: 'Loan Refi',
+  PURCHASE_CLOSING: 'Purchase Closing',
+  HYBRID: 'Hybrid',
+  GENERAL: 'General',
+  FIELD_INSPECTION: 'Field Inspection',
+  APOSTILLE: 'Apostille',
+};
+
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReportsService.name);
+  private readonly s3: S3Client | null;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {
+    const accountId = this.config.get<string>('R2_ACCOUNT_ID');
+    const accessKeyId = this.config.get<string>('R2_ACCESS_KEY_ID');
+    const secretAccessKey = this.config.get<string>('R2_SECRET_ACCESS_KEY');
+    this.s3 =
+      accountId && accessKeyId && secretAccessKey
+        ? new S3Client({
+            region: 'auto',
+            endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+            credentials: { accessKeyId, secretAccessKey },
+          })
+        : null;
+  }
 
   /** Earnings report grouped by period */
   async earnings(
@@ -462,8 +495,74 @@ export class ReportsService {
     };
   }
 
-  /** Generate the Schedule C PDF (mirrors the on-screen preview) */
-  async taxPdf(userId: string, from: string, to: string): Promise<Buffer> {
+  async taxPdf(
+    userId: string,
+    from: string,
+    to: string,
+    regenerate = false,
+  ): Promise<Buffer> {
+    const cacheKey = this.taxPdfKey(userId, from, to);
+
+    if (!regenerate && this.s3) {
+      const cached = await this.fetchTaxPdf(cacheKey);
+      if (cached) return cached;
+    }
+
+    const buffer = await this.generateScheduleCPdf(userId, from, to);
+
+    if (this.s3) {
+      await this.storeTaxPdf(cacheKey, buffer).catch((err: unknown) => {
+        this.logger.warn(
+          `Tax PDF upload to R2 failed (${cacheKey}): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+    }
+
+    return buffer;
+  }
+
+  private taxPdfKey(userId: string, from: string, to: string) {
+    return `tax-pdfs/${userId}/${from}_${to}.pdf`;
+  }
+
+  private async fetchTaxPdf(key: string): Promise<Buffer | null> {
+    if (!this.s3) return null;
+    const bucket = this.config.get<string>('R2_BUCKET_NAME');
+    try {
+      const result = await this.s3.send(
+        new GetObjectCommand({ Bucket: bucket, Key: key }),
+      );
+      if (!result.Body) return null;
+      return Buffer.from(await result.Body.transformToByteArray());
+    } catch {
+      return null; // not cached yet — generate it
+    }
+  }
+
+  private async storeTaxPdf(key: string, buffer: Buffer) {
+    if (!this.s3) return;
+    const bucket = this.config.get<string>('R2_BUCKET_NAME');
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: 'application/pdf',
+        // Overwrite the fixed key — the previous file is replaced rather than
+        // accumulating, keeping storage bounded. Metadata records generation
+        // time so a future prune/expiry job has something to key on.
+        Metadata: { generated_at: new Date().toISOString() },
+      }),
+    );
+  }
+
+  private async generateScheduleCPdf(
+    userId: string,
+    from: string,
+    to: string,
+  ): Promise<Buffer> {
     const data = await this.taxReport(userId, from, to);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -609,8 +708,11 @@ export class ReportsService {
 
       y += 10;
       section('By signing type, detailed');
-      // Table header
-      const colX = [50, 130, 200, 280, 340, 420];
+      // Table header — the type column is wider so long signing types render on
+      // one line instead of wrapping under the next row's divider (which
+      // appeared as a strike-through).
+      const colX = [50, 195, 255, 320, 395, 455];
+      const colW = [140, 55, 60, 70, 55, 75];
       const hdr = [
         'Type',
         'Count',
@@ -623,7 +725,7 @@ export class ReportsService {
       doc.fontSize(9).font('Helvetica-Bold').fillColor('#0F2C4E');
       hdr.forEach((h, i) => {
         doc.text(h, colX[i], y + 3, {
-          width: 80,
+          width: colW[i],
           align: i >= 1 ? 'right' : 'left',
         });
       });
@@ -636,9 +738,15 @@ export class ReportsService {
       y += 6;
       doc.fontSize(9).font('Helvetica').fillColor('#475569');
       for (const t of byType) {
-        ensureSpace(16);
+        const typeText =
+          TYPE_LABEL[String(t.type ?? '').toUpperCase()] ??
+          String(t.type ?? 'Other');
+        const typeHeight =
+          doc.heightOfString(typeText, { width: colW[0] }) || 12;
+        const rowH = Math.max(typeHeight, 16);
+        ensureSpace(rowH + 4);
         const cells = [
-          String(t.type ?? 'Other'),
+          typeText,
           String(t.count ?? 0),
           money(Number(t.gross ?? 0)),
           money(Number(t.avg ?? 0)),
@@ -647,11 +755,11 @@ export class ReportsService {
         ];
         cells.forEach((c, i) => {
           doc.text(c, colX[i], y + 3, {
-            width: 80,
+            width: colW[i],
             align: i >= 1 ? 'right' : 'left',
           });
         });
-        y += 16;
+        y += rowH;
         doc
           .moveTo(50, y)
           .lineTo(doc.page.width - 50, y)

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ReportsService } from './reports.service';
 import { PrismaService } from '../../config/prisma.service';
 import { JobStatus } from '../../../generated/prisma';
@@ -57,7 +58,14 @@ describe('ReportsService', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ReportsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        ReportsService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn(() => undefined) },
+        },
+      ],
     }).compile();
 
     service = module.get<ReportsService>(ReportsService);

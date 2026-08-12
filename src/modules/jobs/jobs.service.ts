@@ -404,6 +404,20 @@ export class JobsService {
       data,
     });
 
+    const clientChanged =
+      dto.client_name !== undefined || dto.client_email !== undefined;
+
+    if (calcChanged || clientChanged) {
+      // Keep unpaid invoices (draft & sent) in sync with edited fee and client details.
+      // Paid invoices are locked and preserve the amount billed at generation time.
+      await this.invoices.syncDraftFromJob(userId, jobId, {
+        fee: dto.fee ?? Number(job.fee),
+        mileage_cost: Number(updated.mileage_cost ?? 0),
+        client_name: dto.client_name,
+        client_email: dto.client_email,
+      });
+    }
+
     if (dto.appointment_time !== undefined) {
       await this.invalidateRouteCache(userId, job.appointment_time);
       await this.invalidateRouteCache(userId, appointmentTime);
