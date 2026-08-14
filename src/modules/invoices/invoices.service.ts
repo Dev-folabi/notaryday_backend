@@ -252,6 +252,12 @@ export class InvoicesService {
           actionUrl: `/invoices`,
         })
         .catch(() => {});
+      await this.notifications.sendPushToUser(userId, {
+        title: 'Payment received',
+        body: `Invoice ${invoice.invoice_number} for $${Number(invoice.total).toFixed(2)} was marked as paid.`,
+        url: '/invoices',
+        tag: `payment-${invoice.id}`,
+      });
     }
 
     return updated;

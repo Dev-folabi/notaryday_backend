@@ -391,6 +391,12 @@ export class BillingService {
     }
 
     // Keep access for now (will be revoked after retry attempts).
+    await this.notifications.sendPushToUser(user.id, {
+      title: 'Subscription payment failed',
+      body: 'Update your billing details to avoid losing Pro access.',
+      url: '/settings?tab=billing',
+      tag: `payment-failed-${data.id}`,
+    });
     await this.notifications.sendEmail({
       to: user.email,
       subject: 'Your Notary Day payment failed',

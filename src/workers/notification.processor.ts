@@ -46,6 +46,13 @@ export class NotificationProcessor {
       if (minutesUntil > leadMins || minutesUntil <= leadMins - 10) return;
     }
 
+    await this.notifications.sendPushToUser(userId, {
+      title: type === 'pre_signing' ? 'Signing reminder' : 'Scanback reminder',
+      body: signingJob.address,
+      url: `/jobs/${jobId}`,
+      tag: `${type}-${jobId}`,
+    });
+
     if (type === 'pre_signing') {
       await this.notifications.sendEmail({
         to: user.email,

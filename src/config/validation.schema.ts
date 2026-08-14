@@ -27,6 +27,11 @@ export const validationSchema = Joi.object({
   RESEND_API_KEY: Joi.string().required(),
   RESEND_IMPORT_DOMAIN: Joi.string().default('inbound.notaryday.app'),
 
+  // Native Web Push (optional; generate once with `npx web-push generate-vapid-keys`)
+  WEB_PUSH_VAPID_PUBLIC_KEY: Joi.string().allow('').default(''),
+  WEB_PUSH_VAPID_PRIVATE_KEY: Joi.string().allow('').default(''),
+  WEB_PUSH_SUBJECT: Joi.string().default('mailto:support@notaryday.app'),
+
   // Lemon Squeezy
   LEMONSQUEEZY_API_KEY: Joi.string().allow('').default(''),
   LEMONSQUEEZY_STORE_ID: Joi.string().allow('').default(''),

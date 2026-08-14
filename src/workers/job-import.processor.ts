@@ -251,6 +251,12 @@ export class JobImportProcessor {
     const notificationConfig =
       await this.userSettings.getNotificationConfig(userId);
     if (user && notificationConfig.prefs.job_imported) {
+      await this.notifications.sendPushToUser(userId, {
+        title: 'Job import ready',
+        body: 'Your imported job is ready for review.',
+        url: `/import?review=${importId}`,
+        tag: `job-import-${importId}`,
+      });
       const appUrl =
         this.config.get<string>('APP_URL') || 'http://localhost:3000';
       await this.notifications.sendNotificationEmail({

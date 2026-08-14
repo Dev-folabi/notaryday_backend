@@ -2,12 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import { PrismaService } from '../../config/prisma.service';
+import webpush from 'web-push';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
   private readonly resend: Resend;
   private readonly fromAddress: string;
+  private readonly pushEnabled: boolean;
 
   constructor(
     private readonly config: ConfigService,
@@ -21,6 +23,14 @@ export class NotificationsService {
     this.fromAddress = this.normalizeFromAddress(
       this.config.get<string>('RESEND_FROM_ADDRESS'),
     );
+
+    const publicKey = this.config.get<string>('WEB_PUSH_VAPID_PUBLIC_KEY');
+    const privateKey = this.config.get<string>('WEB_PUSH_VAPID_PRIVATE_KEY');
+    const subject = this.config.get<string>('WEB_PUSH_SUBJECT');
+    this.pushEnabled = Boolean(publicKey && privateKey && subject);
+    if (this.pushEnabled) {
+      webpush.setVapidDetails(subject!, publicKey!, privateKey!);
+    }
   }
 
   private normalizeFromAddress(value: string | undefined): string {
@@ -219,5 +229,95 @@ export class NotificationsService {
         action_url: data.actionUrl,
       },
     });
+  }
+
+  getPushPublicKey(): string | null {
+    return this.config.get<string>('WEB_PUSH_VAPID_PUBLIC_KEY') || null;
+  }
+
+  async savePushSubscription(
+    userId: string,
+    data: {
+      endpoint: string;
+      p256dh: string;
+      auth: string;
+      user_agent?: string;
+    },
+  ) {
+    const existing = await this.prisma.pushSubscription.findUnique({
+      where: { endpoint: data.endpoint },
+    });
+    if (existing && existing.user_id !== userId) {
+      await this.prisma.pushSubscription.delete({ where: { id: existing.id } });
+    }
+    return this.prisma.pushSubscription.upsert({
+      where: { endpoint: data.endpoint },
+      create: { user_id: userId, ...data },
+      update: { ...data, last_used_at: new Date() },
+    });
+  }
+
+  async removePushSubscription(userId: string, endpoint: string) {
+    return this.prisma.pushSubscription.deleteMany({
+      where: { user_id: userId, endpoint },
+    });
+  }
+
+  async sendPushToUser(
+    userId: string,
+    payload: { title: string; body: string; url?: string; tag?: string },
+  ) {
+    if (!this.pushEnabled) return;
+
+    try {
+      const settings = await this.prisma.userSettings.findUnique({
+        where: { user_id: userId },
+        select: { notification_prefs: true },
+      });
+      const prefs = settings?.notification_prefs;
+      if (
+        prefs &&
+        typeof prefs === 'object' &&
+        !Array.isArray(prefs) &&
+        (prefs as Record<string, unknown>).push_enabled === false
+      )
+        return;
+
+      const subscriptions = await this.prisma.pushSubscription.findMany({
+        where: { user_id: userId },
+      });
+      await Promise.all(
+        subscriptions.map(async (subscription) => {
+          try {
+            await webpush.sendNotification(
+              {
+                endpoint: subscription.endpoint,
+                keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+              },
+              JSON.stringify(payload),
+            );
+            await this.prisma.pushSubscription.update({
+              where: { id: subscription.id },
+              data: { last_used_at: new Date() },
+            });
+          } catch (error) {
+            const statusCode = (error as { statusCode?: number }).statusCode;
+            if (statusCode === 404 || statusCode === 410) {
+              await this.prisma.pushSubscription.delete({
+                where: { id: subscription.id },
+              });
+              return;
+            }
+            this.logger.warn(
+              `Push delivery failed for subscription ${subscription.id}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Push dispatch skipped for user ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

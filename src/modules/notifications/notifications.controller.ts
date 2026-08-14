@@ -6,6 +6,7 @@ import {
   Patch,
   UseGuards,
   Request,
+  Delete,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,6 +19,10 @@ import { NotificationsService } from './notifications.service';
 import { SendNotificationDto } from './dto/send-notification.dto';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
+import {
+  PushSubscriptionDto,
+  RemovePushSubscriptionDto,
+} from './dto/push-subscription.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -25,6 +30,33 @@ import { RequestWithUser } from '../../common/interfaces/request-with-user.inter
 @UseGuards(AuthGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
+
+  @Get('push/public-key')
+  @ApiOperation({ summary: 'Get the Web Push VAPID public key' })
+  getPushPublicKey() {
+    return { publicKey: this.notificationsService.getPushPublicKey() };
+  }
+
+  @Post('push/subscriptions')
+  @ApiOperation({ summary: 'Register a browser push subscription' })
+  async savePushSubscription(
+    @Body() dto: PushSubscriptionDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.notificationsService.savePushSubscription(req.user.id, dto);
+  }
+
+  @Delete('push/subscriptions')
+  @ApiOperation({ summary: 'Remove a browser push subscription' })
+  async removePushSubscription(
+    @Body() dto: RemovePushSubscriptionDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.notificationsService.removePushSubscription(
+      req.user.id,
+      dto.endpoint,
+    );
+  }
 
   @Post('send')
   @ApiOperation({ summary: 'Send a notification email to yourself' })

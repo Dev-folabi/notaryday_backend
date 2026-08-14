@@ -3,6 +3,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { NavApp, SigningType, Prisma } from '../../../generated/prisma';
 
 export const DEFAULT_NOTIFICATION_PREFS = {
+  push_enabled: true,
   pre_sign_reminder: true,
   scanback_reminder: true,
   new_booking_received: true,

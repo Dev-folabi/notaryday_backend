@@ -189,6 +189,12 @@ export class NotificationCronService {
       };
       if (!subscription.data?.attributes?.cancelled) continue;
 
+      await this.notifications.sendPushToUser(user.id, {
+        title: 'Your Notary Day plan expires in 3 days',
+        body: 'Visit billing settings to keep your Pro features active.',
+        url: '/settings?tab=billing',
+        tag: `plan-expiring-${user.id}`,
+      });
       await this.notifications
         .sendEmail({
           to: user.email,

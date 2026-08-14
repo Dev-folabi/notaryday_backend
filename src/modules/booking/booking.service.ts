@@ -241,6 +241,12 @@ export class BookingService {
           actionUrl: '/bookings',
         })
         .catch(() => {});
+      await this.notifications.sendPushToUser(notary.id, {
+        title: 'New booking request',
+        body: `${dto.client_name} requested a ${dto.service_type.replace('_', ' ')} signing.`,
+        url: '/bookings',
+        tag: `booking-${booking.id}`,
+      });
     }
 
     return booking;
@@ -427,6 +433,12 @@ export class BookingService {
           actionUrl: `/jobs/${job.id}`,
         })
         .catch(() => {});
+      await this.notifications.sendPushToUser(notaryId, {
+        title: 'Booking confirmed',
+        body: `${booking.client_name}'s signing was added to your schedule.`,
+        url: `/jobs/${job.id}`,
+        tag: `booking-confirmed-${booking.id}`,
+      });
     }
 
     return { booking: { ...booking, status: BookingStatus.CONFIRMED }, job };
