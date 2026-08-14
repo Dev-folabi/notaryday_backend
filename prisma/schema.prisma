@@ -124,6 +124,7 @@ model User {
   created_at   DateTime  @default(now()) @db.Timestamptz
   updated_at   DateTime  @updatedAt @db.Timestamptz
   last_seen_at DateTime? @db.Timestamptz
+  deleted_at   DateTime? @db.Timestamptz // Set when the user requests account deletion (soft delete)
 
   // Relations
   settings              UserSettings?
@@ -180,9 +181,13 @@ model UserSettings {
   reminders_enabled  Boolean @default(true)
   reminder_lead_mins Int     @default(60) // How far in advance to send reminder
   client_eta_enabled Boolean @default(true) // Auto-send ETA when signing done
+  notification_prefs Json? // { pre_sign_reminder: bool, scanback_reminder: bool, ... }
 
   // Navigation
   preferred_nav_app NavApp @default(GOOGLE_MAPS)
+
+  // Account profile
+  state String? // US state (California, Texas, Florida, ...)
 
   // Calendar sync
   ics_feed_token             String  @unique @default(cuid()) // Secret token for .ics URL

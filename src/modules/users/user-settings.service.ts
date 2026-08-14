@@ -104,6 +104,8 @@ export class UserSettingsService {
       clientEtaEnabled?: boolean;
       preferredNavApp?: NavApp;
       scanback_duration_mins?: number;
+      state?: string;
+      notificationPrefs?: Record<string, boolean>;
     },
   ) {
     const updateData: {
@@ -129,6 +131,8 @@ export class UserSettingsService {
       client_eta_enabled?: boolean;
       preferred_nav_app?: NavApp;
       scanback_duration_mins?: number;
+      state?: string;
+      notification_prefs?: Prisma.InputJsonValue;
     } = {};
     if (data.home_base_address !== undefined)
       updateData.home_base_address = data.home_base_address;
@@ -177,6 +181,10 @@ export class UserSettingsService {
       updateData.preferred_nav_app = data.preferredNavApp;
     if (data.scanback_duration_mins !== undefined)
       updateData.scanback_duration_mins = data.scanback_duration_mins;
+    if (data.state !== undefined) updateData.state = data.state;
+    if (data.notificationPrefs !== undefined)
+      updateData.notification_prefs =
+        data.notificationPrefs as Prisma.InputJsonValue;
 
     return this.prisma.userSettings.upsert({
       where: { user_id: userId },

@@ -13,6 +13,8 @@ describe('UsersController settings save', () => {
     updateOnboardingStep: jest.fn(),
     findById: jest.fn(),
     updateProfile: jest.fn(),
+    changePassword: jest.fn(),
+    softDeleteAccount: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -132,5 +134,76 @@ describe('UsersController settings save', () => {
     const services = updateArg.bookingPageServices as Record<string, unknown>[];
     expect(services).toHaveLength(1);
     expect(services[0].signing_type).toBe('HYBRID');
+  });
+
+  it('persists state via the profile endpoint', async () => {
+    usersService.updateProfile.mockResolvedValue({ id: 'user-1' });
+    await controller.updateProfile('user-1', { state: 'Texas' });
+    expect(usersService.updateProfile).toHaveBeenCalledWith('user-1', {
+      fullName: undefined,
+      phone: undefined,
+      bio: undefined,
+      nnaCertified: undefined,
+      credentials: undefined,
+    });
+    const updateArg = (
+      userSettings.update.mock.calls as [string, Record<string, unknown>][]
+    )[0][1];
+    expect(updateArg.state).toBe('Texas');
+  });
+
+  it('passes notificationPrefs through to the settings service', async () => {
+    const payload = {
+      notificationPrefs: {
+        pre_sign_reminder: false,
+        scanback_reminder: true,
+      },
+    };
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    });
+    const dto = (await pipe.transform(payload, {
+      type: 'body',
+      metatype: UpdateSettingsDto,
+    } as never)) as UpdateSettingsDto;
+
+    await controller.updateSettings('user-1', dto);
+    const updateArg = (
+      userSettings.update.mock.calls as [string, Record<string, unknown>][]
+    )[0][1];
+    expect(updateArg.notificationPrefs).toEqual({
+      pre_sign_reminder: false,
+      scanback_reminder: true,
+    });
+  });
+
+  it('changes password with current + new', async () => {
+    await controller.changePassword('user-1', {
+      currentPassword: 'old-pass',
+      newPassword: 'new-pass-123',
+    });
+    expect(usersService.changePassword).toHaveBeenCalledWith(
+      'user-1',
+      'old-pass',
+      'new-pass-123',
+    );
+  });
+
+  it('rejects account deletion without DELETE confirmation', async () => {
+    await expect(
+      controller.deleteAccount('user-1', { confirmation: 'Delete' }),
+    ).rejects.toThrow();
+    expect(usersService.softDeleteAccount).not.toHaveBeenCalled();
+  });
+
+  it('soft-deletes account when confirmation is DELETE', async () => {
+    const res = await controller.deleteAccount('user-1', {
+      confirmation: 'DELETE',
+    });
+    expect(usersService.softDeleteAccount).toHaveBeenCalledWith('user-1');
+    expect(res).toEqual({ success: true });
   });
 });

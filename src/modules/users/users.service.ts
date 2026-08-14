@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -77,6 +81,44 @@ export class UsersService {
 
   async validatePassword(user: User, password: string): Promise<boolean> {
     return bcrypt.compare(password, user.password_hash);
+  }
+
+  /** Change password when the user is authenticated — verifies the current
+   *  password before applying the new one. */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const valid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!valid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    await this.updatePassword(userId, newPassword);
+  }
+
+  /** Soft-delete the account: flags it for purge and drops billing so the
+   *  user is no longer charged. All other data is retained for the purge window. */
+  async softDeleteAccount(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        deleted_at: new Date(),
+        plan: 'FREE',
+        plan_expires_at: null,
+      },
+    });
   }
 
   async updateProfile(

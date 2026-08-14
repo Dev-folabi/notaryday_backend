@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
+  Delete,
   Body,
   UseGuards,
   HttpCode,
@@ -27,6 +29,7 @@ import {
   IsEnum,
   IsArray,
   IsObject,
+  MinLength,
 } from 'class-validator';
 import { NavApp } from '../../../generated/prisma';
 import { Type } from 'class-transformer';
@@ -56,6 +59,11 @@ class UpdateProfileDto {
   @IsOptional()
   @IsString({ each: true })
   credentials?: string[];
+
+  @ApiPropertyOptional({ example: 'California' })
+  @IsOptional()
+  @IsString()
+  state?: string;
 }
 
 export class UpdateSettingsDto {
@@ -218,6 +226,45 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsObject()
   paymentInfo?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    example: {
+      pre_sign_reminder: true,
+      scanback_reminder: true,
+      new_booking_received: true,
+      job_imported: true,
+      payment_received: true,
+      plan_expiring: true,
+      payment_failed: true,
+    },
+    description:
+      'Notification preferences map. Keys are the UI toggle identifiers; values are booleans. Locked notifications (plan expiry, payment failure) are always sent regardless of this value.',
+  })
+  @IsOptional()
+  @IsObject()
+  notificationPrefs?: Record<string, boolean>;
+
+  @ApiPropertyOptional({ example: 'California' })
+  @IsOptional()
+  @IsString()
+  state?: string;
+}
+
+export class ChangePasswordDto {
+  @ApiPropertyOptional({ example: 'current-pass' })
+  @IsString()
+  currentPassword!: string;
+
+  @ApiPropertyOptional({ example: 'new-pass' })
+  @IsString()
+  @MinLength(8, { message: 'New password must be at least 8 characters' })
+  newPassword!: string;
+}
+
+export class DeleteAccountDto {
+  @ApiPropertyOptional({ example: 'DELETE' })
+  @IsString()
+  confirmation!: string;
 }
 
 @ApiTags('Users')
@@ -258,6 +305,12 @@ export class UsersController {
       nnaCertified: dto.nnaCertified,
       credentials: dto.credentials,
     });
+
+    // US state lives on user settings.
+    if (dto.state !== undefined) {
+      await this.userSettingsService.update(userId, { state: dto.state });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
     return rest;
@@ -308,6 +361,8 @@ export class UsersController {
       preferredNavApp: dto.preferredNavApp,
       scanback_duration_mins: dto.scanback_duration_mins,
       paymentInfo: dto.paymentInfo,
+      state: dto.state,
+      notificationPrefs: dto.notificationPrefs,
     });
 
     if (dto.signing_defaults && Array.isArray(dto.signing_defaults)) {
@@ -345,5 +400,42 @@ export class UsersController {
   })
   async getSigningDefaults(@CurrentUser('id') userId: string) {
     return this.userSettingsService.getSigningDefaults(userId);
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change the authenticated user password' })
+  @ApiResponse({ status: 200, description: 'Password updated' })
+  @ApiResponse({ status: 400, description: 'Current password is incorrect' })
+  async changePassword(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    await this.usersService.changePassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+    return { success: true };
+  }
+
+  @Delete('me')
+  @ApiOperation({ summary: 'Permanently delete the current user account' })
+  @ApiResponse({ status: 200, description: 'Account deletion scheduled' })
+  @ApiResponse({
+    status: 400,
+    description: 'Confirmation text must be DELETE',
+  })
+  async deleteAccount(
+    @CurrentUser('id') userId: string,
+    @Body() dto: DeleteAccountDto,
+  ) {
+    if (dto.confirmation !== 'DELETE') {
+      throw new ConflictException(
+        'Please type DELETE to confirm account deletion',
+      );
+    }
+    await this.usersService.softDeleteAccount(userId);
+    return { success: true };
   }
 }
