@@ -239,16 +239,20 @@ export class InvoicesService {
       },
     });
 
-    await this.notifications
-      .createNotification({
-        userId,
-        type: 'PAYMENT_RECEIVED',
-        title: 'Payment received',
-        body: `Invoice ${invoice.invoice_number} for $${Number(invoice.total).toFixed(2)} marked as paid${paymentMethod ? ` via ${paymentMethod}` : ''}.`,
-        jobId: invoice.job_id,
-        actionUrl: `/invoices`,
-      })
-      .catch(() => {});
+    const notificationConfig =
+      await this.userSettings.getNotificationConfig(userId);
+    if (notificationConfig.prefs.payment_received) {
+      await this.notifications
+        .createNotification({
+          userId,
+          type: 'PAYMENT_RECEIVED',
+          title: 'Payment received',
+          body: `Invoice ${invoice.invoice_number} for $${Number(invoice.total).toFixed(2)} marked as paid${paymentMethod ? ` via ${paymentMethod}` : ''}.`,
+          jobId: invoice.job_id,
+          actionUrl: `/invoices`,
+        })
+        .catch(() => {});
+    }
 
     return updated;
   }

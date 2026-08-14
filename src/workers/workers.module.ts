@@ -6,6 +6,7 @@ import { NotificationProcessor } from './notification.processor';
 import { CalendarSyncProcessor } from './calendar-sync.processor';
 import { NotificationCronService } from './notification-cron.service';
 import { NotificationsModule } from '../modules/notifications/notifications.module';
+import { UsersModule } from '../modules/users/users.module';
 import {
   QUEUE_JOB_IMPORT,
   QUEUE_INVOICE,
@@ -22,6 +23,7 @@ import {
       { name: QUEUE_CALENDAR_SYNC },
     ),
     NotificationsModule,
+    UsersModule,
   ],
   providers: [
     JobImportProcessor,

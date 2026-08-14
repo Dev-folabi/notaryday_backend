@@ -8,6 +8,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JournalService } from '../journal/journal.service';
 import { OrsService } from '../../common/services/ors.service';
+import { InvoicesService } from '../invoices/invoices.service';
 import {
   QUEUE_CALENDAR_SYNC,
   QUEUE_NOTIFICATION,
@@ -37,10 +38,12 @@ describe('JobsService', () => {
     get: jest.fn(),
     getSigningDefaults: jest.fn(),
     getScanbackDuration: jest.fn(),
+    getNotificationConfig: jest.fn(),
   };
   const geocodingMock = { geocode: jest.fn() };
   const redisMock = { del: jest.fn().mockResolvedValue(1) };
   const calendarSyncQueueMock = { add: jest.fn() };
+  const notificationQueueMock = { add: jest.fn() };
 
   function createdJobData(): CreatedJobData {
     const call = prismaMock.job.create.mock.calls[0] as [
@@ -65,12 +68,16 @@ describe('JobsService', () => {
         },
         { provide: OrsService, useValue: orsMock },
         {
+          provide: InvoicesService,
+          useValue: { generate: jest.fn(), syncDraftFromJob: jest.fn() },
+        },
+        {
           provide: getQueueToken(QUEUE_CALENDAR_SYNC),
           useValue: calendarSyncQueueMock,
         },
         {
           provide: getQueueToken(QUEUE_NOTIFICATION),
-          useValue: { add: jest.fn() },
+          useValue: notificationQueueMock,
         },
       ],
     }).compile();

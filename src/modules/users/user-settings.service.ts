@@ -2,6 +2,28 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { NavApp, SigningType, Prisma } from '../../../generated/prisma';
 
+export const DEFAULT_NOTIFICATION_PREFS = {
+  pre_sign_reminder: true,
+  scanback_reminder: true,
+  new_booking_received: true,
+  job_imported: true,
+  payment_received: true,
+  plan_expiring: true,
+  payment_failed: true,
+  client_appointment_reminder: true,
+  client_invoice: true,
+  client_booking_confirmation: true,
+};
+
+export type NotificationPreferenceKey = keyof typeof DEFAULT_NOTIFICATION_PREFS;
+
+export interface NotificationConfig {
+  prefs: Record<NotificationPreferenceKey, boolean>;
+  remindersEnabled: boolean;
+  reminderLeadMins: number;
+  clientEtaEnabled: boolean;
+}
+
 @Injectable()
 export class UserSettingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -77,6 +99,28 @@ export class UserSettingsService {
     }
 
     return settings;
+  }
+
+  async getNotificationConfig(userId: string): Promise<NotificationConfig> {
+    const settings = await this.get(userId);
+    const stored =
+      settings.notification_prefs &&
+      typeof settings.notification_prefs === 'object' &&
+      !Array.isArray(settings.notification_prefs)
+        ? (settings.notification_prefs as Record<string, unknown>)
+        : {};
+
+    const prefs = { ...DEFAULT_NOTIFICATION_PREFS };
+    for (const key of Object.keys(prefs) as NotificationPreferenceKey[]) {
+      if (typeof stored[key] === 'boolean') prefs[key] = stored[key];
+    }
+
+    return {
+      prefs,
+      remindersEnabled: settings.reminders_enabled,
+      reminderLeadMins: settings.reminder_lead_mins,
+      clientEtaEnabled: settings.client_eta_enabled,
+    };
   }
 
   async update(

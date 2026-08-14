@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { PrismaService } from '../config/prisma.service';
 import { NotificationsService } from '../modules/notifications/notifications.service';
+import { UserSettingsService } from '../modules/users/user-settings.service';
 import { QUEUE_INVOICE } from '../queues/queue.constants';
 import { ConfigService } from '@nestjs/config';
 import PDFDocument from 'pdfkit';
@@ -22,6 +23,7 @@ export class InvoiceProcessor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly userSettings: UserSettingsService,
     private readonly config: ConfigService,
   ) {
     const r2 = this.config.get<{
@@ -206,6 +208,16 @@ export class InvoiceProcessor {
       include: { job: true, user: true },
     });
     if (!invoice || !invoice.recipient_email) return;
+    const notificationConfig = await this.userSettings.getNotificationConfig(
+      invoice.user_id,
+    );
+    if (!notificationConfig.prefs.client_invoice) {
+      await this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data: { email_pending: false },
+      });
+      return;
+    }
 
     try {
       await this.notifications.sendEmail({

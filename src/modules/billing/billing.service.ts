@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/config/prisma.service';
 import { PlanTier, Prisma } from '../../../generated/prisma';
 import crypto from 'crypto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface LemonSqueezyAttributes {
   variant_id: number;
@@ -44,6 +45,7 @@ export class BillingService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -388,8 +390,12 @@ export class BillingService {
       return { processed: false };
     }
 
-    // Keep access for now (will be revoked after retry attempts)
-    // Could trigger notification email here
+    // Keep access for now (will be revoked after retry attempts).
+    await this.notifications.sendEmail({
+      to: user.email,
+      subject: 'Your Notary Day payment failed',
+      html: '<p>We could not process your Notary Day subscription payment. Your access remains active while payment retries continue. Please update your billing details.</p>',
+    });
     this.logger.warn(
       `Payment failed for user ${user.id}, subscription ${data.id}`,
     );

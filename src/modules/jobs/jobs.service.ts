@@ -506,6 +506,22 @@ export class JobsService {
       }
     }
 
+    if (
+      newStatus === JobStatus.SCANNING &&
+      SCANBACK_TYPES.has(job.signing_type)
+    ) {
+      const config = await this.userSettings.getNotificationConfig(userId);
+      if (config.remindersEnabled && config.prefs.scanback_reminder) {
+        await this.notificationQueue
+          .add(
+            'send-reminder',
+            { userId, jobId: job.id, type: 'scanback' },
+            { jobId: `scanback-${job.id}-${now.getTime()}` },
+          )
+          .catch(() => {});
+      }
+    }
+
     if (newStatus === JobStatus.COMPLETE) {
       try {
         await this.invoices.generate(userId, job.id);
@@ -550,6 +566,9 @@ export class JobsService {
     userId: string,
     completedJob: { appointment_time: Date },
   ) {
+    const config = await this.userSettings.getNotificationConfig(userId);
+    if (!config.clientEtaEnabled) return;
+
     // Find next confirmed job after this one
     const nextJob = await this.prisma.job.findFirst({
       where: {

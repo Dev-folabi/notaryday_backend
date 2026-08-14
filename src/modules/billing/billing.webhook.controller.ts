@@ -68,8 +68,12 @@ export class BillingWebhookController {
         parsedPayload,
       );
     } catch {
-      this.logger.log(`Duplicate event ${eventId}`);
-      return { received: true };
+      const existing = await this.billingService.findEvent(eventId);
+      if (existing?.processed) {
+        this.logger.log(`Duplicate event ${eventId}`);
+        return { received: true };
+      }
+      this.logger.log(`Retrying previously failed event ${eventId}`);
     }
 
     try {

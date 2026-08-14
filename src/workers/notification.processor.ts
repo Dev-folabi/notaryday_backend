@@ -4,6 +4,7 @@ import { Job } from 'bull';
 import { PrismaService } from '../config/prisma.service';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { QUEUE_NOTIFICATION } from '../queues/queue.constants';
+import { UserSettingsService } from '../modules/users/user-settings.service';
 
 @Processor(QUEUE_NOTIFICATION)
 export class NotificationProcessor {
@@ -12,6 +13,7 @@ export class NotificationProcessor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly userSettings: UserSettingsService,
   ) {}
 
   @Process('send-reminder')
@@ -20,19 +22,34 @@ export class NotificationProcessor {
       userId: string;
       jobId: string;
       type: 'pre_signing' | 'scanback';
+      leadMins?: number;
     }>,
   ) {
-    const { userId, jobId, type } = job.data;
+    const { userId, jobId, type, leadMins = 30 } = job.data;
+    const config = await this.userSettings.getNotificationConfig(userId);
+    if (
+      !config.remindersEnabled ||
+      (type === 'pre_signing' && !config.prefs.pre_sign_reminder) ||
+      (type === 'scanback' && !config.prefs.scanback_reminder)
+    )
+      return;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const signingJob = await this.prisma.job.findUnique({
       where: { id: jobId },
     });
-    if (!user || !signingJob) return;
+    if (!user || !signingJob || signingJob.deleted_at) return;
+    if (type === 'pre_signing' && signingJob.status !== 'CONFIRMED') return;
+    if (type === 'scanback' && signingJob.status !== 'SCANNING') return;
+    if (type === 'pre_signing') {
+      const minutesUntil =
+        (signingJob.appointment_time.getTime() - Date.now()) / 60_000;
+      if (minutesUntil > leadMins || minutesUntil <= leadMins - 10) return;
+    }
 
     if (type === 'pre_signing') {
       await this.notifications.sendEmail({
         to: user.email,
-        subject: `Reminder: Signing at ${signingJob.address} in 30 min`,
+        subject: `Reminder: Signing at ${signingJob.address} in ${leadMins} min`,
         html: `<p>Your signing at <strong>${signingJob.address}</strong> starts at ${signingJob.appointment_time.toLocaleTimeString()}.</p>`,
       });
     }
@@ -42,10 +59,45 @@ export class NotificationProcessor {
         user_id: userId,
         type: 'JOB_REMINDER',
         title:
-          type === 'pre_signing'
-            ? 'Signing in 30 minutes'
-            : 'Scanback reminder',
+          type === 'pre_signing' ? 'Signing reminder' : 'Scanback reminder',
         body: `${signingJob.address}`,
+        job_id: jobId,
+        action_url: `/jobs/${jobId}`,
+      },
+    });
+  }
+
+  @Process('send-client-appointment-reminder')
+  async handleClientAppointmentReminder(
+    job: Job<{ userId: string; jobId: string }>,
+  ) {
+    const { userId, jobId } = job.data;
+    const config = await this.userSettings.getNotificationConfig(userId);
+    if (!config.prefs.client_appointment_reminder) return;
+    const signingJob = await this.prisma.job.findUnique({
+      where: { id: jobId },
+    });
+    if (
+      !signingJob?.client_email ||
+      signingJob.deleted_at ||
+      signingJob.status !== 'CONFIRMED'
+    )
+      return;
+    const minutesUntil =
+      (signingJob.appointment_time.getTime() - Date.now()) / 60_000;
+    if (minutesUntil < 23 * 60 || minutesUntil > 25 * 60) return;
+
+    await this.notifications.sendEmail({
+      to: signingJob.client_email,
+      subject: 'Your notary appointment is tomorrow',
+      html: `<p>Your signing at <strong>${signingJob.address}</strong> is scheduled for ${signingJob.appointment_time.toLocaleString()}.</p>`,
+    });
+    await this.prisma.notification.create({
+      data: {
+        user_id: userId,
+        type: 'JOB_REMINDER',
+        title: 'Client appointment reminder sent',
+        body: signingJob.address,
         job_id: jobId,
         action_url: `/jobs/${jobId}`,
       },
@@ -56,7 +108,9 @@ export class NotificationProcessor {
   async handleClientEta(
     job: Job<{ userId: string; nextJobId: string; etaMins: number }>,
   ) {
-    const { nextJobId, etaMins } = job.data;
+    const { userId, nextJobId, etaMins } = job.data;
+    const config = await this.userSettings.getNotificationConfig(userId);
+    if (!config.clientEtaEnabled) return;
     const nextJob = await this.prisma.job.findUnique({
       where: { id: nextJobId },
     });
@@ -77,6 +131,8 @@ export class NotificationProcessor {
   @Process('daily-summary')
   async handleDailySummary(job: Job<{ userId: string; date: string }>) {
     const { userId, date } = job.data;
+    const config = await this.userSettings.getNotificationConfig(userId);
+    if (!config.remindersEnabled) return;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
 

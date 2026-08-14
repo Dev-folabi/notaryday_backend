@@ -227,16 +227,21 @@ export class BookingService {
     }
 
     // Notify the notary of the new booking request (in-app)
-    await this.notifications
-      .createNotification({
-        userId: notary.id,
-        type: 'BOOKING_RECEIVED',
-        title: 'New booking request',
-        body: `${dto.client_name} requested a ${dto.service_type.replace('_', ' ')} signing on ${new Date(booking.requested_time).toLocaleDateString()}.`,
-        bookingId: booking.id,
-        actionUrl: '/bookings',
-      })
-      .catch(() => {});
+    const notificationConfig = await this.userSettings.getNotificationConfig(
+      notary.id,
+    );
+    if (notificationConfig.prefs.new_booking_received) {
+      await this.notifications
+        .createNotification({
+          userId: notary.id,
+          type: 'BOOKING_RECEIVED',
+          title: 'New booking request',
+          body: `${dto.client_name} requested a ${dto.service_type.replace('_', ' ')} signing on ${new Date(booking.requested_time).toLocaleDateString()}.`,
+          bookingId: booking.id,
+          actionUrl: '/bookings',
+        })
+        .catch(() => {});
+    }
 
     return booking;
   }
@@ -395,7 +400,12 @@ export class BookingService {
     });
 
     // Email the client confirmation (after the transaction commits)
-    if (booking.client_email) {
+    const notificationConfig =
+      await this.userSettings.getNotificationConfig(notaryId);
+    if (
+      booking.client_email &&
+      notificationConfig.prefs.client_booking_confirmation
+    ) {
       const notary = await this.prisma.user.findUnique({
         where: { id: notaryId },
       });
@@ -405,17 +415,19 @@ export class BookingService {
     }
 
     // Notify the notary that the booking was approved
-    await this.notifications
-      .createNotification({
-        userId: notaryId,
-        type: 'BOOKING_CONFIRMED',
-        title: 'Booking confirmed',
-        body: `${booking.client_name}'s ${booking.service_type.replace('_', ' ')} signing was added to your schedule.`,
-        bookingId: booking.id,
-        jobId: job.id,
-        actionUrl: `/jobs/${job.id}`,
-      })
-      .catch(() => {});
+    if (notificationConfig.prefs.new_booking_received) {
+      await this.notifications
+        .createNotification({
+          userId: notaryId,
+          type: 'BOOKING_CONFIRMED',
+          title: 'Booking confirmed',
+          body: `${booking.client_name}'s ${booking.service_type.replace('_', ' ')} signing was added to your schedule.`,
+          bookingId: booking.id,
+          jobId: job.id,
+          actionUrl: `/jobs/${job.id}`,
+        })
+        .catch(() => {});
+    }
 
     return { booking: { ...booking, status: BookingStatus.CONFIRMED }, job };
   }
@@ -438,7 +450,12 @@ export class BookingService {
     });
 
     // Email the client about the decline + alternatives
-    if (booking.client_email) {
+    const notificationConfig =
+      await this.userSettings.getNotificationConfig(notaryId);
+    if (
+      booking.client_email &&
+      notificationConfig.prefs.client_booking_confirmation
+    ) {
       const notary = await this.prisma.user.findUnique({
         where: { id: notaryId },
       });

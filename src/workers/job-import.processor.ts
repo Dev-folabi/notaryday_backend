@@ -9,6 +9,7 @@ import { PrismaService } from '../config/prisma.service';
 import { QUEUE_JOB_IMPORT } from '../queues/queue.constants';
 import { ImportStatus, SigningType } from '../../generated/prisma';
 import { NotificationsService } from '../modules/notifications/notifications.service';
+import { UserSettingsService } from '../modules/users/user-settings.service';
 
 const PARSE_EMAIL = 'parse-email';
 const PARSE_SCREENSHOT = 'parse-screenshot';
@@ -35,6 +36,7 @@ export class JobImportProcessor {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
+    private readonly userSettings: UserSettingsService,
   ) {}
 
   @Process(PARSE_EMAIL)
@@ -246,7 +248,9 @@ export class JobImportProcessor {
       where: { id: userId },
     });
 
-    if (user) {
+    const notificationConfig =
+      await this.userSettings.getNotificationConfig(userId);
+    if (user && notificationConfig.prefs.job_imported) {
       const appUrl =
         this.config.get<string>('APP_URL') || 'http://localhost:3000';
       await this.notifications.sendNotificationEmail({
