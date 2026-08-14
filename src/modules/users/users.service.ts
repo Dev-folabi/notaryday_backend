@@ -21,7 +21,7 @@ export class UsersService {
   async findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({
       where: { id },
-      include: { settings: true },
+      include: { settings: true, signing_defaults: true },
     });
   }
 

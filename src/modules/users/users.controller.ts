@@ -366,16 +366,10 @@ export class UsersController {
     });
 
     if (dto.signing_defaults && Array.isArray(dto.signing_defaults)) {
-      for (const sd of dto.signing_defaults) {
-        if (sd.signing_type) {
-          await this.userSettingsService.upsertSigningDefault(
-            userId,
-            sd.signing_type,
-            sd.signing_duration_mins,
-            sd.scanback_duration_mins,
-          );
-        }
-      }
+      await this.userSettingsService.syncSigningDefaults(
+        userId,
+        dto.signing_defaults,
+      );
     }
 
     return settings;

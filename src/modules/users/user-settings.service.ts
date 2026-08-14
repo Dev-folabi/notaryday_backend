@@ -270,4 +270,38 @@ export class UserSettingsService {
       );
     }
   }
+
+  /** Replace the full set of signing defaults for a user. Any type present in
+   *  the DB but absent from `defaults` is deleted (deselected types must take
+   *  effect), and the provided entries are upserted. */
+  async syncSigningDefaults(
+    userId: string,
+    defaults: {
+      signing_type: string;
+      signing_duration_mins: number;
+      scanback_duration_mins: number;
+    }[],
+  ) {
+    const types = defaults
+      .map((d) => d.signing_type)
+      .filter((t): t is SigningType => !!t);
+
+    await this.prisma.signingTypeDefault.deleteMany({
+      where: {
+        user_id: userId,
+        signing_type: { notIn: types },
+      },
+    });
+
+    for (const d of defaults) {
+      if (d.signing_type) {
+        await this.upsertSigningDefault(
+          userId,
+          d.signing_type,
+          d.signing_duration_mins,
+          d.scanback_duration_mins,
+        );
+      }
+    }
+  }
 }
