@@ -12,6 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { QUEUE_INVOICE } from '../../queues/queue.constants';
 import { UpdateInvoiceDto } from './dto/invoice.dto';
 import { JobStatus, Prisma } from '../../../generated/prisma';
+import { calculateProfitability } from '../../common/utils/profitability.util';
 
 @Injectable()
 export class InvoicesService {
@@ -377,6 +378,7 @@ export class InvoicesService {
       data.subtotal = finalFee;
       data.travel_fee = 0;
       data.total = finalFee;
+      await this.syncJobFee(invoice.job_id, finalFee);
     }
 
     const updated = await this.prisma.invoice.update({
@@ -395,5 +397,39 @@ export class InvoicesService {
     });
 
     return updated;
+  }
+
+  /** When an invoice's final fee is edited, mirror it on the linked job so the
+   *  fee + derived profitability stay consistent across invoices and reports.
+   *  Drive time is not stored on jobs, so it is estimated from mileage at
+   *  ~30 mph (same shape as calculateProfitability). */
+  private async syncJobFee(jobId: string, fee: number) {
+    const job = await this.prisma.job.findFirst({
+      where: { id: jobId, deleted_at: null },
+    });
+    if (!job) return;
+    if (Number(job.fee ?? 0) === fee) return;
+
+    const distanceMiles = Number(job.mileage_miles ?? 0);
+    const driveTimeMins =
+      distanceMiles > 0 ? Math.round((distanceMiles / 30) * 60) : 0;
+    const profitability = calculateProfitability({
+      fee,
+      platformFee: job.platform_fee ?? 0,
+      distanceMiles,
+      irsRatePerMile: job.irs_rate_snapshot ?? 0,
+      signingDurationMins: job.signing_duration_mins,
+      driveTimeMins,
+      scanbackDurationMins: job.scanback_duration_mins,
+    });
+
+    await this.prisma.job.update({
+      where: { id: jobId },
+      data: {
+        fee,
+        net_earnings: profitability.netEarnings,
+        effective_hourly: profitability.effectiveHourly,
+      },
+    });
   }
 }

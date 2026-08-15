@@ -22,7 +22,7 @@ describe('EmailRendererService', () => {
     });
 
     expect(output.html).toContain(
-      'https://assets.example.com/branding/notaryday-original.png',
+      'https://assets.example.com/branding/notaryday-white-text.png',
     );
     expect(output.html).toContain('Appointment confirmed');
     expect(output.text).toBe('Your appointment is confirmed.');

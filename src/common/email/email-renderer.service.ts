@@ -26,7 +26,7 @@ export class EmailRendererService {
   }
 
   render(data: EmailRenderData): { html: string; text: string } {
-    const logo = this.assets.original ?? this.assets.badge;
+    const logo = this.assets.whiteText ?? this.assets.badge;
     const logoHtml = logo
       ? `<img src="${this.escapeAttribute(logo)}" alt="Notary Day" width="${data.compactLogo ? 34 : 132}" style="display:block;max-width:${data.compactLogo ? 34 : 132}px;height:auto;border:0">`
       : `<div style="font-family:Arial,sans-serif;font-size:18px;font-weight:700;color:#ffffff">Notary Day</div>`;

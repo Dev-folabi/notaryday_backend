@@ -41,6 +41,11 @@ function fmtInTz(
   }
 }
 
+function signingTypeLabel(type: string | null | undefined): string {
+  const t = (type ?? '').toLowerCase();
+  return t === 'general' ? 'General Notary' : (type ?? '').replace('_', ' ');
+}
+
 type InvoiceWithJob = Prisma.InvoiceGetPayload<{
   include: { job: true; user: { include: { settings: true } } };
 }>;
@@ -103,7 +108,6 @@ export class InvoiceProcessor {
       const signingFee = invoiceTotal - travelFee;
       const settings = invoice.user.settings;
       const timezone = settings?.timezone ?? null;
-      const state = settings?.state || null;
       const dueDays = settings?.invoice_due_days ?? 0;
       const clientPhone = invoice.job.client_phone ?? null;
       const durationMins = invoice.job.signing_duration_mins;
@@ -127,30 +131,30 @@ export class InvoiceProcessor {
       };
 
       doc.save().rect(0, 0, doc.page.width, 112).fill(navy).restore();
-      if (this.emailAssets.original) {
+      if (this.emailAssets.whiteText) {
         try {
-          doc.image(this.emailAssets.original, doc.page.margins.left, 27, {
-            width: 170,
+          doc.image(this.emailAssets.whiteText, doc.page.margins.left, 26, {
+            width: 128,
           });
         } catch {
           doc
             .font('Helvetica-Bold')
             .fontSize(22)
             .fillColor('#FFFFFF')
-            .text('Notary Day', doc.page.margins.left, 38);
+            .text('Notary Day', doc.page.margins.left, 34);
         }
       } else {
         doc
           .font('Helvetica-Bold')
           .fontSize(22)
           .fillColor('#FFFFFF')
-          .text('Notary Day', doc.page.margins.left, 38);
+          .text('Notary Day', doc.page.margins.left, 34);
       }
       doc
         .font('Helvetica')
         .fontSize(9)
         .fillColor('#CBD5E1')
-        .text(`Invoice #${invoice.invoice_number}`, doc.page.margins.left, 73);
+        .text(`Invoice #${invoice.invoice_number}`, doc.page.margins.left, 78);
       doc
         .font('Helvetica')
         .fontSize(9)
@@ -158,29 +162,13 @@ export class InvoiceProcessor {
         .text(
           fmtInTz(invoice.created_at, timezone, { dateOnly: true }),
           doc.page.margins.left,
-          88,
+          94,
         );
       doc
         .font('Helvetica-Bold')
         .fontSize(22)
         .fillColor('#FFFFFF')
         .text('INVOICE', doc.page.width - 170, 35, {
-          width: 128,
-          align: 'right',
-        });
-      doc
-        .font('Helvetica')
-        .fontSize(8)
-        .fillColor('#CBD5E1')
-        .text('STATUS', doc.page.width - 170, 70, {
-          width: 128,
-          align: 'right',
-        });
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(9)
-        .fillColor('#FFFFFF')
-        .text(invoice.is_paid ? 'PAID' : 'DUE', doc.page.width - 170, 82, {
           width: 128,
           align: 'right',
         });
@@ -198,7 +186,7 @@ export class InvoiceProcessor {
         .fontSize(9)
         .fillColor(slate2)
         .text(
-          `${notary.email}\n${notary.phone ?? ''}${state ? `\n${state}` : ''}`,
+          `${notary.email}\n${notary.phone ?? ''}`,
           doc.page.margins.left,
           y + 30,
           { width: pageWidth / 2 - 16, lineGap: 3 },
@@ -255,7 +243,7 @@ export class InvoiceProcessor {
         .fontSize(10)
         .fillColor(navy)
         .text(
-          invoice.job.signing_type.replace('_', ' '),
+          signingTypeLabel(invoice.job.signing_type),
           doc.page.margins.left,
           y,
           { width: pageWidth - 180 },
@@ -348,9 +336,9 @@ export class InvoiceProcessor {
 
       // Payment details from user settings
       const paymentInfo = invoice.user.settings?.payment_info;
-      const paymentLines: string[] = [];
+      const paymentRows: [string, string][] = [];
       if (typeof paymentInfo === 'string') {
-        paymentLines.push(paymentInfo);
+        paymentRows.push(['Payment', paymentInfo]);
       } else if (
         typeof paymentInfo === 'object' &&
         paymentInfo !== null &&
@@ -362,29 +350,28 @@ export class InvoiceProcessor {
             typeof info.account_last4 === 'string' && info.account_last4
               ? ` ending in ${info.account_last4}`
               : '';
-          paymentLines.push(`${info.bank_name}${last4}`);
+          paymentRows.push(['Bank', `${info.bank_name}${last4}`]);
         }
         const labeled: [string, string][] = [
           ['zelle', 'Zelle'],
           ['venmo', 'Venmo'],
           ['paypal', 'PayPal'],
+          ['other', 'Other'],
         ];
         for (const [key, label] of labeled) {
           const v = info[key];
-          if (typeof v === 'string' && v) paymentLines.push(`${label}: ${v}`);
+          if (typeof v === 'string' && v) paymentRows.push([label, v]);
         }
         if (typeof info.routing_last4 === 'string' && info.routing_last4) {
-          paymentLines.push(`Routing: ••••${info.routing_last4}`);
-        }
-        if (typeof info.other === 'string' && info.other) {
-          paymentLines.push(info.other);
+          paymentRows.push(['Routing', `••••${info.routing_last4}`]);
         }
       }
 
-      if (paymentLines.length > 0) {
+      if (paymentRows.length > 0) {
+        const boxHeight = Math.max(58, 26 + paymentRows.length * 18);
         doc
           .save()
-          .roundedRect(doc.page.margins.left, y, pageWidth, 58, 5)
+          .roundedRect(doc.page.margins.left, y, pageWidth, boxHeight, 5)
           .fill(bg)
           .restore();
         doc
@@ -392,14 +379,26 @@ export class InvoiceProcessor {
           .fontSize(9)
           .fillColor(navy)
           .text('PAYMENT DETAILS', doc.page.margins.left + 14, y + 12);
-        doc
-          .font('Helvetica')
-          .fontSize(9)
-          .fillColor(slate2)
-          .text(paymentLines.join(' · '), doc.page.margins.left + 14, y + 28, {
-            width: pageWidth - 28,
-          });
-        y += 76;
+        let py = y + 30;
+        for (const [label, value] of paymentRows) {
+          doc
+            .font('Helvetica-Bold')
+            .fontSize(9)
+            .fillColor(navy)
+            .text(label, doc.page.margins.left + 14, py, {
+              width: 80,
+              lineBreak: false,
+            });
+          doc
+            .font('Helvetica')
+            .fontSize(9)
+            .fillColor(slate2)
+            .text(value, doc.page.margins.left + 100, py, {
+              width: pageWidth - 128,
+            });
+          py += 18;
+        }
+        y += boxHeight + 18;
       }
 
       if (invoice.note_to_client) {
@@ -407,7 +406,7 @@ export class InvoiceProcessor {
           .font('Helvetica-Bold')
           .fontSize(9)
           .fillColor(navy)
-          .text('NOTE TO CLIENT', doc.page.margins.left, y);
+          .text('NOTE:', doc.page.margins.left, y);
         doc
           .font('Helvetica')
           .fontSize(9)
@@ -418,20 +417,31 @@ export class InvoiceProcessor {
         y += 48;
       }
 
+      const dueLineY = Math.min(y + 12, doc.page.height - 92);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(9)
+        .fillColor(navy)
+        .text(
+          `Payment due ${dueDays > 0 ? `within ${dueDays} days` : 'upon receipt'}.`,
+          doc.page.margins.left,
+          dueLineY,
+          { width: pageWidth },
+        );
       doc
         .font('Helvetica')
         .fontSize(8)
         .fillColor(slate2)
         .text(
-          `Payment due ${dueDays > 0 ? `within ${dueDays} days` : 'upon receipt'}. Payment is made directly to the notary. Notary Day is not involved in the transaction.`,
+          'Payment is made directly to the notary. Notary Day is not involved in the transaction.',
           doc.page.margins.left,
-          Math.min(y + 8, doc.page.height - 70),
+          dueLineY + 15,
           { width: pageWidth },
         );
-      if (this.emailAssets.monochrome) {
+      if (this.emailAssets.original) {
         try {
           doc.image(
-            this.emailAssets.monochrome,
+            this.emailAssets.original,
             doc.page.margins.left,
             doc.page.height - 48,
             { width: 105 },
@@ -551,7 +561,7 @@ export class InvoiceProcessor {
               client_name: invoice.recipient_name ?? 'there',
               invoice_number: invoice.invoice_number,
               total: Number(invoice.total).toFixed(2),
-              service_type: invoice.job.signing_type.replace('_', ' '),
+              service_type: signingTypeLabel(invoice.job.signing_type),
               address: invoice.job.address,
               date: fmtInTz(invoice.job.appointment_time, timezone, {
                 dateOnly: true,
@@ -572,7 +582,7 @@ export class InvoiceProcessor {
         contentHtml: this.emailRenderer.detailBlock([
           [
             'Service',
-            `${invoice.job.signing_type.replace('_', ' ')} · ${fmtInTz(invoice.job.appointment_time, timezone, { dateOnly: true })}`,
+            `${signingTypeLabel(invoice.job.signing_type)} · ${fmtInTz(invoice.job.appointment_time, timezone, { dateOnly: true })}`,
           ],
           ['Location', invoice.job.address],
           ['Invoice', invoice.invoice_number.toString()],

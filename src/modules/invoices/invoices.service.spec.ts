@@ -12,6 +12,10 @@ describe('InvoicesService', () => {
       update: jest.Mock;
       findFirst: jest.Mock;
     };
+    job: {
+      update: jest.Mock;
+      findFirst: jest.Mock;
+    };
   };
   let enqueue: jest.SpyInstance;
 
@@ -31,6 +35,10 @@ describe('InvoicesService', () => {
     prisma = {
       invoice: {
         update: jest.fn().mockResolvedValue({ id: 'inv-1' }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      job: {
+        update: jest.fn().mockResolvedValue({ id: 'j1' }),
         findFirst: jest.fn().mockResolvedValue(null),
       },
     };
@@ -113,6 +121,58 @@ describe('InvoicesService', () => {
       await expect(
         service.update('u1', 'inv-1', { recipient_email: 'x@y.com' }),
       ).resolves.toBeDefined();
+    });
+
+    it('syncs the edited fee back to the linked job', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        ...baseInvoice,
+        job_id: 'j1',
+      } as never);
+      prisma.job.findFirst.mockResolvedValue({
+        id: 'j1',
+        fee: 100,
+        platform_fee: 5,
+        mileage_miles: 30,
+        mileage_cost: 40.2,
+        irs_rate_snapshot: 0.67,
+        signing_duration_mins: 60,
+        scanback_duration_mins: 20,
+      });
+
+      await service.update('u1', 'inv-1', { final_fee: 200 });
+
+      expect(prisma.job.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'j1' },
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            fee: 200,
+            net_earnings: 154.8,
+            effective_hourly: 66.34,
+          }),
+        }),
+      );
+    });
+
+    it('does not touch the job when the fee is unchanged', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        ...baseInvoice,
+        job_id: 'j1',
+      } as never);
+      prisma.job.findFirst.mockResolvedValue({
+        id: 'j1',
+        fee: 150,
+        platform_fee: 5,
+        mileage_miles: 30,
+        mileage_cost: 40.2,
+        irs_rate_snapshot: 0.67,
+        signing_duration_mins: 60,
+        scanback_duration_mins: 20,
+      });
+
+      await service.update('u1', 'inv-1', { final_fee: 150 });
+
+      expect(prisma.job.update).not.toHaveBeenCalled();
     });
   });
 
