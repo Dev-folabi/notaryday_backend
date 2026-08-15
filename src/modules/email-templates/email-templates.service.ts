@@ -2,6 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { EmailTemplate } from '../../../generated/prisma';
 import { PrismaService } from '../../config/prisma.service';
 import {
+  looksLikeHtml,
+  textToHtml,
+} from '../../common/email/template-text.util';
+import {
   CreateEmailTemplateDto,
   UpdateEmailTemplateDto,
 } from './dto/email-template.dto';
@@ -11,31 +15,72 @@ const DEFAULT_TEMPLATES = [
     type: 'appointment_reminder',
     name: 'Appointment Reminder',
     subject: 'Reminder: Your signing appointment is coming up',
-    body: `<p>Hi {{client_name}},</p><p>This is a reminder that your signing appointment is scheduled for <strong>{{appointment_time}}</strong> at {{address}}.</p><p>Your notary, {{notary_name}}, will arrive on time. Please have your ID ready.</p><p>See you soon!</p>`,
+    body: `Hi {{client_name}},
+
+This is a reminder that your signing appointment is scheduled for {{appointment_time}} at {{address}}.
+
+Your notary, {{notary_name}}, will arrive on time. Please have your ID ready.
+
+See you soon!`,
   },
   {
     type: 'invoice',
     name: 'Invoice',
     subject: 'Invoice {{invoice_number}} from {{notary_name}}',
-    body: '<p>Hi {{client_name}},</p><p>Please find your invoice below:</p><p><strong>Invoice:</strong> {{invoice_number}}<br><strong>Amount:</strong> ${{total}}<br><strong>Service:</strong> {{service_type}} at {{address}}<br><strong>Date:</strong> {{date}}</p><p><strong>Payment details:</strong><br>{{payment_info}}</p><p>Thank you for choosing {{notary_name}}.</p>',
+    body: `Hi {{client_name}},
+
+Please find your invoice below:
+
+Invoice: {{invoice_number}}
+Amount: \${{total}}
+Service: {{service_type}} at {{address}}
+Date: {{date}}
+
+Payment details:
+{{payment_info}}
+
+Thank you for choosing {{notary_name}}.`,
   },
   {
     type: 'booking_confirmation',
     name: 'Booking Confirmation',
     subject: 'Your appointment with {{notary_name}} is confirmed',
-    body: `<p>Hi {{client_name}},</p><p>Your signing appointment has been confirmed:</p><p><strong>Date:</strong> {{date}}<br><strong>Time:</strong> {{appointment_time}}<br><strong>Address:</strong> {{address}}<br><strong>Service:</strong> {{service_type}}</p><p>If you need to reschedule, please contact {{notary_name}} directly.</p>`,
+    body: `Hi {{client_name}},
+
+Your signing appointment has been confirmed:
+
+Date: {{date}}
+Time: {{appointment_time}}
+Address: {{address}}
+Service: {{service_type}}
+
+If you need to reschedule, please contact {{notary_name}} directly.`,
   },
   {
     type: 'booking_declined',
     name: 'Booking Declined',
     subject: 'Regarding your booking request with {{notary_name}}',
-    body: `<p>Hi {{client_name}},</p><p>Unfortunately, {{notary_name}} is unavailable at the requested time.</p>{{#alternative_times}}<p>Here are some alternative times that may work:</p><ul>{{alternative_times}}</ul>{{/alternative_times}}<p>Please feel free to book again for a different time.</p>`,
+    body: `Hi {{client_name}},
+
+Unfortunately, {{notary_name}} is unavailable at the requested time.
+
+{{#alternative_times}}
+Here are some alternative times that may work:
+
+{{alternative_times}}
+{{/alternative_times}}
+
+Please feel free to book again for a different time.`,
   },
   {
     type: 'client_eta',
     name: 'Client ETA',
     subject: 'Your notary is on the way',
-    body: `<p>Hi {{client_name}},</p><p>Your notary, {{notary_name}}, is heading to you and will arrive at approximately <strong>{{eta_time}}</strong>.</p><p>Please have your ID ready for the signing.</p>`,
+    body: `Hi {{client_name}},
+
+Your notary, {{notary_name}}, is heading to you and will arrive at approximately {{eta_time}}.
+
+Please have your ID ready for the signing.`,
   },
 ];
 
@@ -91,13 +136,16 @@ export class EmailTemplatesService {
     });
   }
 
-  /** Render a template with variables */
+  /** Render a template with variables. Text bodies are converted to HTML;
+   *  legacy HTML bodies (already stored as markup) pass through unchanged. */
   render(
     template: { subject: string; body: string },
     vars: Record<string, string>,
   ): { subject: string; body: string } {
     let subject = template.subject;
-    let body = template.body;
+    let body = looksLikeHtml(template.body)
+      ? template.body
+      : textToHtml(template.body);
     for (const [key, value] of Object.entries(vars)) {
       const re = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
       subject = subject.replace(re, value);

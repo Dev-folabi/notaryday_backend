@@ -56,4 +56,58 @@ describe('EmailTemplatesService.render', () => {
     expect(result.subject).toBe('Regarding your booking with Tomm');
     expect(result.body).toBe('<p>Hi Jessica,</p>');
   });
+
+  it('converts a plain-text body into paragraphs', () => {
+    const result = service.render(
+      {
+        subject: 'Reminder',
+        body: 'Hi {{name}},\n\nSee you at {{time}}.',
+      },
+      { name: 'Marcus', time: '2:00 PM' },
+    );
+    expect(result.body).toBe('<p>Hi Marcus,</p><p>See you at 2:00 PM.</p>');
+  });
+
+  it('joins single newlines with line breaks', () => {
+    const result = service.render(
+      { subject: 'Invoice', body: 'Amount: {{total}}\nDue on receipt.' },
+      { total: '145.00' },
+    );
+    expect(result.body).toBe('<p>Amount: 145.00<br>Due on receipt.</p>');
+  });
+
+  it('escapes user text but preserves variables', () => {
+    const result = service.render(
+      { subject: 'X', body: 'Tom & Jerry < next {{name}}' },
+      { name: 'Marcus' },
+    );
+    expect(result.body).toBe('<p>Tom &amp; Jerry &lt; next Marcus</p>');
+  });
+
+  it('drops a text section block when its variable is empty', () => {
+    const result = service.render(
+      {
+        subject: 'Update',
+        body: 'Hi {{client_name}},\n\n{{#alternative_times}}\nHere are some alternative times:\n\n{{alternative_times}}\n{{/alternative_times}}\n\nBye.',
+      },
+      { client_name: 'Lena', alternative_times: '' },
+    );
+    expect(result.body).toBe('<p>Hi Lena,</p><p>Bye.</p>');
+  });
+
+  it('renders a text section block as a list when its variable is present', () => {
+    const result = service.render(
+      {
+        subject: 'Update',
+        body: 'Hi {{client_name}},\n\n{{#alternative_times}}\nHere are some alternative times:\n\n{{alternative_times}}\n{{/alternative_times}}\n\nBye.',
+      },
+      {
+        client_name: 'Lena',
+        alternative_times: '<li>Fri at 10:00 AM</li><li>Sat at 2:00 PM</li>',
+      },
+    );
+    expect(result.body).toBe(
+      '<p>Hi Lena,</p><p>Here are some alternative times:</p><ul><li>Fri at 10:00 AM</li><li>Sat at 2:00 PM</li></ul><p>Bye.</p>',
+    );
+  });
 });
