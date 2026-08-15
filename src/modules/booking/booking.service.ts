@@ -493,10 +493,15 @@ export class BookingService {
     },
   ): Promise<{ to: string; subject: string; html: string; text?: string }> {
     const notaryName = notary?.full_name ?? notary?.username ?? 'your notary';
+    const timezone = (await this.userSettings.get(notaryId)).timezone ?? null;
+    const dateLabel = this.formatInTimezone(booking.requested_time, timezone, {
+      dateOnly: true,
+    });
+    const timeLabel = this.formatInTimezone(booking.requested_time, timezone);
     const contentHtml = this.emailRenderer.detailBlock([
       ['Notary', notaryName],
-      ['Date', booking.requested_time.toLocaleDateString()],
-      ['Time', booking.requested_time.toLocaleTimeString()],
+      ['Date', dateLabel],
+      ['Time', timeLabel],
       ['Address', booking.address],
       ['Service', booking.service_type.replace('_', ' ')],
     ]);
@@ -507,7 +512,7 @@ export class BookingService {
       intro: 'Your signing appointment has been confirmed.',
       contentHtml,
       footer: `You will receive a reminder email 24 hours before your appointment. To cancel, contact ${notaryName} directly.`,
-      plainText: `Your signing with ${notaryName} is confirmed for ${booking.requested_time.toLocaleString()} at ${booking.address}.`,
+      plainText: `Your signing with ${notaryName} is confirmed for ${this.formatInTimezone(booking.requested_time, timezone)} at ${booking.address}.`,
     });
     const fallback = {
       to: booking.client_email,
@@ -522,8 +527,8 @@ export class BookingService {
       {
         client_name: booking.client_name,
         notary_name: notaryName,
-        date: booking.requested_time.toLocaleDateString(),
-        appointment_time: booking.requested_time.toLocaleString(),
+        date: dateLabel,
+        appointment_time: timeLabel,
         address: booking.address,
         service_type: booking.service_type.replace('_', ' '),
       },
@@ -532,7 +537,6 @@ export class BookingService {
     const customized = this.emailRenderer.render({
       title: 'Your signing is booked',
       subtitle: 'Notary Day · Booking confirmation',
-      greeting: `Hi ${booking.client_name},`,
       intro: rendered.html,
       contentHtml,
       footer: `To cancel, contact ${notaryName} directly.`,
@@ -553,12 +557,17 @@ export class BookingService {
     dto: DeclineBookingDto,
   ): Promise<{ to: string; subject: string; html: string; text?: string }> {
     const notaryName = notary?.full_name ?? notary?.username ?? 'your notary';
-    const altTimes = (dto.alternative_times ?? [])
-      .map((t) => new Date(t).toLocaleString())
-      .join('<br>');
+    const timezone = (await this.userSettings.get(notaryId)).timezone ?? null;
+    const altTimes = (dto.alternative_times ?? []).map((t) =>
+      this.formatInTimezone(new Date(t), timezone),
+    );
+    const altTimesLi = altTimes.map((t) => `<li>${t}</li>`).join('');
     const contentHtml = this.emailRenderer.detailBlock([
       ['Notary', notaryName],
-      ['Requested time', booking.requested_time.toLocaleString()],
+      [
+        'Requested time',
+        this.formatInTimezone(booking.requested_time, timezone),
+      ],
       ['Service', booking.service_type.replace('_', ' ')],
       ...(dto.reason
         ? ([['Reason', dto.reason]] as Array<[string, string]>)
@@ -570,8 +579,8 @@ export class BookingService {
       greeting: `Hi ${booking.client_name},`,
       intro:
         'Unfortunately, your requested signing time could not be accommodated.',
-      contentHtml: `${contentHtml}${altTimes ? `<p style="font-size:12px;line-height:1.6;color:#475569"><strong>Alternative times</strong><br>${altTimes}</p>` : ''}`,
-      plainText: `Your booking request for ${booking.requested_time.toLocaleString()} could not be accommodated.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+      contentHtml: `${contentHtml}${altTimesLi ? `<p style="font-size:12px;line-height:1.6;color:#475569"><strong>Alternative times</strong></p><ul style="font-size:12px;line-height:1.6;color:#475569;padding-left:18px;margin:0 0 12px">${altTimesLi}</ul>` : ''}`,
+      plainText: `Your booking request for ${this.formatInTimezone(booking.requested_time, timezone)} could not be accommodated.${altTimes.length ? ` Alternative times: ${altTimes.join('; ')}.` : ''}${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
     });
     const fallback = {
       to: booking.client_email,
@@ -586,18 +595,22 @@ export class BookingService {
       {
         client_name: booking.client_name,
         notary_name: notaryName,
-        date: booking.requested_time.toLocaleDateString(),
-        appointment_time: booking.requested_time.toLocaleString(),
+        date: this.formatInTimezone(booking.requested_time, timezone, {
+          dateOnly: true,
+        }),
+        appointment_time: this.formatInTimezone(
+          booking.requested_time,
+          timezone,
+        ),
         address: '',
         service_type: booking.service_type.replace('_', ' '),
-        alternative_times: altTimes,
+        alternative_times: altTimesLi,
       },
     );
     if (!rendered) return fallback;
     const customized = this.emailRenderer.render({
       title: 'Booking update',
       subtitle: 'Notary Day · Booking request',
-      greeting: `Hi ${booking.client_name},`,
       intro: rendered.html,
       contentHtml,
       plainText: rendered.text,
@@ -618,7 +631,7 @@ export class BookingService {
   } | null> {
     try {
       const template = await this.emailTemplates.findByType(notaryId, type);
-      if (!template) return null;
+      if (!template || !template.is_active) return null;
       const rendered = this.emailTemplates.render(template, vars);
       return {
         to,
@@ -1137,6 +1150,28 @@ export class BookingService {
       return parts.find((p) => p.type === 'timeZoneName')?.value ?? null;
     } catch {
       return null;
+    }
+  }
+
+  /** Format a Date in the notary's timezone, e.g. "Thursday, March 20, 2026 at 2:00 PM (PDT)". */
+  private formatInTimezone(
+    date: Date,
+    timezone?: string | null,
+    opts: { dateOnly?: boolean } = {},
+  ): string {
+    try {
+      const abbr = timezone ? this.timezoneAbbr(timezone) : null;
+      const formatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone ?? undefined,
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        ...(opts.dateOnly ? {} : { hour: 'numeric', minute: '2-digit' }),
+      }).format(date);
+      return abbr && !opts.dateOnly ? `${formatted} (${abbr})` : formatted;
+    } catch {
+      return date.toLocaleString();
     }
   }
 

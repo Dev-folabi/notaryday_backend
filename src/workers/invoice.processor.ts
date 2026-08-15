@@ -13,6 +13,34 @@ import { getLocalEmailAssets } from '../common/email/email-assets';
 import { EmailRendererService } from '../common/email/email-renderer.service';
 import { EmailTemplatesService } from '../modules/email-templates/email-templates.service';
 
+function fmtInTz(
+  date: Date,
+  timezone?: string | null,
+  opts: { dateOnly?: boolean } = {},
+): string {
+  try {
+    const abbr = timezone
+      ? (new Intl.DateTimeFormat('en-US', {
+          timeZone: timezone,
+          timeZoneName: 'short',
+        })
+          .formatToParts(date)
+          .find((p) => p.type === 'timeZoneName')?.value ?? null)
+      : null;
+    const formatted = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone ?? undefined,
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      ...(opts.dateOnly ? {} : { hour: 'numeric', minute: '2-digit' }),
+    }).format(date);
+    return abbr && !opts.dateOnly ? `${formatted} (${abbr})` : formatted;
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
 type InvoiceWithJob = Prisma.InvoiceGetPayload<{
   include: { job: true; user: { include: { settings: true } } };
 }>;
@@ -73,6 +101,12 @@ export class InvoiceProcessor {
       const invoiceTotal = Number(invoice.total);
       const travelFee = Number(invoice.job.mileage_cost ?? 0);
       const signingFee = invoiceTotal - travelFee;
+      const settings = invoice.user.settings;
+      const timezone = settings?.timezone ?? null;
+      const state = settings?.state || null;
+      const dueDays = settings?.invoice_due_days ?? 0;
+      const clientPhone = invoice.job.client_phone ?? null;
+      const durationMins = invoice.job.signing_duration_mins;
       const drawLabel = (
         label: string,
         value: string,
@@ -121,7 +155,11 @@ export class InvoiceProcessor {
         .font('Helvetica')
         .fontSize(9)
         .fillColor('#CBD5E1')
-        .text(new Date().toLocaleDateString(), doc.page.margins.left, 88);
+        .text(
+          fmtInTz(invoice.created_at, timezone, { dateOnly: true }),
+          doc.page.margins.left,
+          88,
+        );
       doc
         .font('Helvetica-Bold')
         .fontSize(22)
@@ -160,7 +198,7 @@ export class InvoiceProcessor {
         .fontSize(9)
         .fillColor(slate2)
         .text(
-          `${notary.email}\n${notary.phone ?? ''}`,
+          `${notary.email}\n${notary.phone ?? ''}${state ? `\n${state}` : ''}`,
           doc.page.margins.left,
           y + 30,
           { width: pageWidth / 2 - 16, lineGap: 3 },
@@ -177,7 +215,7 @@ export class InvoiceProcessor {
         .fontSize(9)
         .fillColor(slate2)
         .text(
-          `${invoice.recipient_email}\n${invoice.job.address}`,
+          `${invoice.recipient_email}\n${invoice.job.address}${clientPhone ? `\n${clientPhone}` : ''}`,
           doc.page.margins.left + pageWidth / 2,
           y + 30,
           { width: pageWidth / 2, lineGap: 3 },
@@ -227,7 +265,7 @@ export class InvoiceProcessor {
         .fontSize(8)
         .fillColor(slate2)
         .text(
-          `${invoice.job.address} · ${invoice.job.appointment_time.toLocaleDateString()}`,
+          `${invoice.job.address} · ${fmtInTz(invoice.job.appointment_time, timezone)}${durationMins ? ` · ${durationMins} min` : ''}`,
           doc.page.margins.left,
           y + 14,
           { width: pageWidth - 180 },
@@ -385,7 +423,7 @@ export class InvoiceProcessor {
         .fontSize(8)
         .fillColor(slate2)
         .text(
-          'Payment is made directly to the notary. Notary Day is not involved in the transaction.',
+          `Payment due ${dueDays > 0 ? `within ${dueDays} days` : 'upon receipt'}. Payment is made directly to the notary. Notary Day is not involved in the transaction.`,
           doc.page.margins.left,
           Math.min(y + 8, doc.page.height - 70),
           { width: pageWidth },
@@ -444,7 +482,7 @@ export class InvoiceProcessor {
       const r2PublicDomain =
         this.config.get<string>('R2_PUBLIC_DOMAIN') ||
         'https://assets.notaryday.app';
-      const pdfUrl = `${r2PublicDomain}/${objectKey}`;
+      const pdfUrl = `${r2PublicDomain}/${objectKey}?v=${Date.now()}`;
 
       await this.prisma.invoice.update({
         where: { id: invoiceId },
@@ -501,6 +539,8 @@ export class InvoiceProcessor {
     }
 
     try {
+      const timezone =
+        (await this.userSettings.get(invoice.user_id)).timezone ?? null;
       const template = await this.emailTemplates.findByType(
         invoice.user_id,
         'invoice',
@@ -513,7 +553,9 @@ export class InvoiceProcessor {
               total: Number(invoice.total).toFixed(2),
               service_type: invoice.job.signing_type.replace('_', ' '),
               address: invoice.job.address,
-              date: invoice.job.appointment_time.toLocaleDateString(),
+              date: fmtInTz(invoice.job.appointment_time, timezone, {
+                dateOnly: true,
+              }),
               notary_name: invoice.user.full_name ?? invoice.user.username,
               payment_info: 'Payment details are included on the invoice PDF.',
             })
@@ -521,14 +563,16 @@ export class InvoiceProcessor {
       const rendered = this.emailRenderer.render({
         title: `Invoice from ${invoice.user.full_name ?? invoice.user.username}`,
         subtitle: `Invoice #${invoice.invoice_number} · Powered by Notary Day`,
-        greeting: `Hi ${invoice.recipient_name ?? 'there'},`,
+        greeting: custom
+          ? undefined
+          : `Hi ${invoice.recipient_name ?? 'there'},`,
         intro:
           custom?.body ??
           'Thank you for your signing appointment today. Please find your invoice below.',
         contentHtml: this.emailRenderer.detailBlock([
           [
             'Service',
-            `${invoice.job.signing_type.replace('_', ' ')} · ${invoice.job.appointment_time.toLocaleDateString()}`,
+            `${invoice.job.signing_type.replace('_', ' ')} · ${fmtInTz(invoice.job.appointment_time, timezone, { dateOnly: true })}`,
           ],
           ['Location', invoice.job.address],
           ['Invoice', invoice.invoice_number.toString()],

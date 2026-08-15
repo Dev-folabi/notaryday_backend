@@ -102,6 +102,12 @@ export class EmailTemplatesService {
       const re = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
       subject = subject.replace(re, value);
       body = body.replace(re, value);
+
+      const secRe = new RegExp(
+        `\\{\\{#${key}\\}\\}([\\s\\S]*?)\\{\\{/${key}\\}\\}`,
+        'g',
+      );
+      body = body.replace(secRe, value.trim() ? '$1' : '');
     }
     return { subject, body };
   }

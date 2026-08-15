@@ -8,6 +8,34 @@ import { UserSettingsService } from '../modules/users/user-settings.service';
 import { EmailRendererService } from '../common/email/email-renderer.service';
 import { EmailTemplatesService } from '../modules/email-templates/email-templates.service';
 
+function fmtInTz(
+  date: Date,
+  timezone?: string | null,
+  opts: { dateOnly?: boolean } = {},
+): string {
+  try {
+    const abbr = timezone
+      ? (new Intl.DateTimeFormat('en-US', {
+          timeZone: timezone,
+          timeZoneName: 'short',
+        })
+          .formatToParts(date)
+          .find((p) => p.type === 'timeZoneName')?.value ?? null)
+      : null;
+    const formatted = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone ?? undefined,
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      ...(opts.dateOnly ? {} : { hour: 'numeric', minute: '2-digit' }),
+    }).format(date);
+    return abbr && !opts.dateOnly ? `${formatted} (${abbr})` : formatted;
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
 @Processor(QUEUE_NOTIFICATION)
 export class NotificationProcessor {
   private readonly logger = new Logger(NotificationProcessor.name);
@@ -116,6 +144,7 @@ export class NotificationProcessor {
     if (minutesUntil < 23 * 60 || minutesUntil > 25 * 60) return;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
+    const timezone = (await this.userSettings.get(userId)).timezone ?? null;
     const template = await this.emailTemplates.findByType(
       userId,
       'appointment_reminder',
@@ -125,7 +154,7 @@ export class NotificationProcessor {
         ? this.emailTemplates.render(template, {
             client_name: signingJob.client_name ?? 'there',
             notary_name: user.full_name ?? user.username,
-            appointment_time: signingJob.appointment_time.toLocaleString(),
+            appointment_time: fmtInTz(signingJob.appointment_time, timezone),
             address: signingJob.address,
             service_type: signingJob.signing_type.replace('_', ' '),
           })
@@ -134,18 +163,21 @@ export class NotificationProcessor {
     const rendered = this.emailRenderer.render({
       title: 'Appointment reminder',
       subtitle: `Sent on behalf of ${user.full_name ?? 'your notary'}`,
-      greeting: `Hi ${signingJob.client_name ?? 'there'},`,
+      greeting: custom ? undefined : `Hi ${signingJob.client_name ?? 'there'},`,
       intro:
         custom?.body ??
-        `Your notary signing is scheduled for <strong style="color:#0F2C4E">${signingJob.appointment_time.toLocaleString()}</strong>.`,
+        `Your notary signing is scheduled for <strong style="color:#0F2C4E">${fmtInTz(signingJob.appointment_time, timezone)}</strong>.`,
       contentHtml: this.emailRenderer.detailBlock([
         ['Notary', user.full_name ?? 'Notary Day'],
-        ['Date', signingJob.appointment_time.toLocaleDateString()],
-        ['Time', signingJob.appointment_time.toLocaleTimeString()],
+        [
+          'Date',
+          fmtInTz(signingJob.appointment_time, timezone, { dateOnly: true }),
+        ],
+        ['Time', fmtInTz(signingJob.appointment_time, timezone)],
         ['Address', signingJob.address],
         ['Service', signingJob.signing_type.replace('_', ' ')],
       ]),
-      plainText: `Your appointment is scheduled for ${signingJob.appointment_time.toLocaleString()} at ${signingJob.address}.`,
+      plainText: `Your appointment is scheduled for ${fmtInTz(signingJob.appointment_time, timezone)} at ${signingJob.address}.`,
     });
     await this.notifications.sendEmail({
       to: signingJob.client_email,
@@ -178,39 +210,33 @@ export class NotificationProcessor {
     if (!nextJob?.client_email) return;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
+    const timezone = (await this.userSettings.get(userId)).timezone ?? null;
+    const etaDate = new Date(Date.now() + etaMins * 60_000);
     const template = await this.emailTemplates.findByType(userId, 'client_eta');
     const custom =
       template && template.is_active
         ? this.emailTemplates.render(template, {
             client_name: nextJob.client_name ?? 'there',
             notary_name: user.full_name ?? user.username,
-            eta_time: new Date(
-              Date.now() + etaMins * 60_000,
-            ).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+            eta_time: fmtInTz(etaDate, timezone),
           })
         : null;
 
-    const etaTime = new Date(Date.now() + etaMins * 60_000);
+    const etaTime = fmtInTz(etaDate, timezone);
     const rendered = this.emailRenderer.render({
       title: 'Your notary is on the way',
       subtitle: 'Client ETA update',
-      greeting: `Hi ${nextJob.client_name ?? 'there'},`,
+      greeting: custom ? undefined : `Hi ${nextJob.client_name ?? 'there'},`,
       intro:
         custom?.body ??
-        `Your notary is heading to you and will arrive at approximately <strong style="color:#0F2C4E">${etaTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</strong>.`,
+        `Your notary is heading to you and will arrive at approximately <strong style="color:#0F2C4E">${etaTime}</strong>.`,
       contentHtml: this.emailRenderer.detailBlock([
         ['Address', nextJob.address],
         ['Service', nextJob.signing_type.replace('_', ' ')],
-        [
-          'Estimated arrival',
-          etaTime.toLocaleTimeString([], {
-            hour: 'numeric',
-            minute: '2-digit',
-          }),
-        ],
+        ['Estimated arrival', etaTime],
       ]),
       footer: 'Please have your ID ready for the signing.',
-      plainText: `Your notary is heading to you and will arrive at approximately ${etaTime.toLocaleTimeString()}.`,
+      plainText: `Your notary is heading to you and will arrive at approximately ${etaTime}.`,
     });
     await this.notifications.sendEmail({
       to: nextJob.client_email,

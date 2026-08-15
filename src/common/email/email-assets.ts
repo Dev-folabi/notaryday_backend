@@ -17,13 +17,26 @@ export function getLocalEmailAssets() {
   };
 }
 
+const ASSET_FILES = [
+  'notaryday-icon-badge.png',
+  'notaryday-original.png',
+  'notaryday-stacked.png',
+  'notaryday-monochrome.png',
+];
+
 export function getEmailAssets(config: ConfigService): EmailAssets {
-  const base = (config.get<string>('EMAIL_ASSET_BASE_URL') ?? '').replace(
+  let base = (config.get<string>('EMAIL_ASSET_BASE_URL') ?? '').replace(
     /\/$/,
     '',
   );
   if (!base) {
     return { badge: null, original: null, stacked: null, monochrome: null };
+  }
+  // Tolerate a base URL that already ends in one of the known asset files,
+  // so the directory itself is used as the prefix.
+  const lastSegment = base.split('/').pop() ?? '';
+  if (ASSET_FILES.includes(lastSegment)) {
+    base = base.slice(0, base.length - lastSegment.length).replace(/\/$/, '');
   }
 
   return {
