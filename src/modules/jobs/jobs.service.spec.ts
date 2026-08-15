@@ -261,4 +261,128 @@ describe('JobsService', () => {
       expect(redisMock.del).toHaveBeenCalledWith('route:user-1:2026-08-06');
     });
   });
+
+  describe('dispatchClientEta', () => {
+    const now = Date.now();
+
+    const nextJob = (overrides: {
+      appointment_time: Date;
+      drive_from_prev_mins?: number | null;
+    }) => ({
+      id: 'job-next',
+      client_email: 'client@example.com',
+      client_name: 'Jane Client',
+      address: '456 Oak Ave',
+      signing_type: 'LOAN_REFI',
+      ...overrides,
+    });
+
+    const eta = async (completedAt: Date) => {
+      await (
+        service as unknown as {
+          dispatchClientEta: (
+            userId: string,
+            job: { appointment_time: Date },
+          ) => Promise<void>;
+        }
+      ).dispatchClientEta('user-1', { appointment_time: completedAt });
+    };
+
+    beforeEach(() => {
+      userSettingsMock.getNotificationConfig.mockResolvedValue({
+        clientEtaEnabled: true,
+      });
+      prismaMock.job.findFirst.mockResolvedValue(null);
+      notificationQueueMock.add.mockResolvedValue({});
+    });
+
+    it('enqueues the ETA when the next appointment is within the drive-time window', async () => {
+      prismaMock.job.findFirst.mockResolvedValue(
+        nextJob({
+          appointment_time: new Date(now + 30 * 60_000),
+          drive_from_prev_mins: 20,
+        }),
+      );
+
+      await eta(new Date(now));
+
+      expect(notificationQueueMock.add).toHaveBeenCalledWith(
+        'send-client-eta',
+        {
+          userId: 'user-1',
+          nextJobId: 'job-next',
+          etaMins: 20,
+        },
+      );
+    });
+
+    it('uses the 20-minute fallback when drive_from_prev_mins is not set', async () => {
+      prismaMock.job.findFirst.mockResolvedValue(
+        nextJob({
+          appointment_time: new Date(now + 30 * 60_000),
+          drive_from_prev_mins: null,
+        }),
+      );
+
+      await eta(new Date(now));
+
+      expect(notificationQueueMock.add).toHaveBeenCalledWith(
+        'send-client-eta',
+        {
+          userId: 'user-1',
+          nextJobId: 'job-next',
+          etaMins: 20,
+        },
+      );
+    });
+
+    it('does not send when the next appointment is a day away', async () => {
+      prismaMock.job.findFirst.mockResolvedValue(
+        nextJob({
+          appointment_time: new Date(now + 24 * 60 * 60_000),
+          drive_from_prev_mins: 20,
+        }),
+      );
+
+      await eta(new Date(now));
+
+      expect(notificationQueueMock.add).not.toHaveBeenCalled();
+    });
+
+    it('does not send when the appointment is already well past', async () => {
+      prismaMock.job.findFirst.mockResolvedValue(
+        nextJob({
+          appointment_time: new Date(now - 60 * 60_000),
+          drive_from_prev_mins: 20,
+        }),
+      );
+
+      await eta(new Date(now));
+
+      expect(notificationQueueMock.add).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the ETA preference is disabled', async () => {
+      userSettingsMock.getNotificationConfig.mockResolvedValue({
+        clientEtaEnabled: false,
+      });
+      prismaMock.job.findFirst.mockResolvedValue(
+        nextJob({
+          appointment_time: new Date(now + 30 * 60_000),
+          drive_from_prev_mins: 20,
+        }),
+      );
+
+      await eta(new Date(now));
+
+      expect(prismaMock.job.findFirst).not.toHaveBeenCalled();
+      expect(notificationQueueMock.add).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when there is no next confirmed job', async () => {
+      await eta(new Date(now));
+
+      expect(notificationQueueMock.add).not.toHaveBeenCalled();
+    });
+  });
 });

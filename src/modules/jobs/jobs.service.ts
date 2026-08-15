@@ -10,6 +10,7 @@ import { GeocodingService } from '../geocoding/geocoding.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { calculateProfitability } from '../../common/utils/profitability.util';
 import { haversineMiles } from '../../common/utils/geo.util';
+import { isEtaSendAppropriate } from '../../common/utils/eta-window.util';
 import { OrsService } from '../../common/services/ors.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
@@ -583,24 +584,17 @@ export class JobsService {
 
     const driveMins = nextJob.drive_from_prev_mins ?? 20;
 
-    // Queue the client ETA email (processed by NotificationProcessor)
+    // Only send when the appointment is close enough that the notary would be
+    // heading there now. Far-future appointments get the 24h reminder instead.
+    if (!isEtaSendAppropriate(nextJob.appointment_time, driveMins)) return;
+
+    // Queue the client ETA email (processed by NotificationProcessor, which
+    // re-verifies the window and creates the in-app notification on send).
     await this.notificationQueue
       .add('send-client-eta', {
         userId,
         nextJobId: nextJob.id,
         etaMins: driveMins,
-      })
-      .catch(() => {});
-
-    // In-app notification for the notary that an ETA was dispatched
-    await this.notifications
-      .createNotification({
-        userId,
-        type: 'CLIENT_ETA',
-        title: 'Client ETA sent',
-        body: `Arrival notification sent to ${nextJob.client_name ?? 'your next client'} (~${driveMins} min).`,
-        jobId: nextJob.id,
-        actionUrl: `/jobs/${nextJob.id}`,
       })
       .catch(() => {});
   }

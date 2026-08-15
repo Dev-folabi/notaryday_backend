@@ -7,6 +7,8 @@ import { QUEUE_NOTIFICATION } from '../queues/queue.constants';
 import { UserSettingsService } from '../modules/users/user-settings.service';
 import { EmailRendererService } from '../common/email/email-renderer.service';
 import { EmailTemplatesService } from '../modules/email-templates/email-templates.service';
+import { JobStatus } from '../../generated/prisma';
+import { isEtaSendAppropriate } from '../common/utils/eta-window.util';
 
 function fmtInTz(
   date: Date,
@@ -201,17 +203,28 @@ export class NotificationProcessor {
   async handleClientEta(
     job: Job<{ userId: string; nextJobId: string; etaMins: number }>,
   ) {
-    const { userId, nextJobId, etaMins } = job.data;
+    const { userId, nextJobId } = job.data;
     const config = await this.userSettings.getNotificationConfig(userId);
     if (!config.clientEtaEnabled) return;
     const nextJob = await this.prisma.job.findUnique({
       where: { id: nextJobId },
     });
-    if (!nextJob?.client_email) return;
+    if (
+      !nextJob?.client_email ||
+      nextJob.deleted_at ||
+      nextJob.status !== JobStatus.CONFIRMED
+    )
+      return;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
+
+    // Re-verify the window at send time (the job runs async, so the schedule
+    // may have changed since dispatch).
+    const driveMins = nextJob.drive_from_prev_mins ?? 20;
+    if (!isEtaSendAppropriate(nextJob.appointment_time, driveMins)) return;
+
     const timezone = (await this.userSettings.get(userId)).timezone ?? null;
-    const etaDate = new Date(Date.now() + etaMins * 60_000);
+    const etaDate = nextJob.appointment_time;
     const template = await this.emailTemplates.findByType(userId, 'client_eta');
     const custom =
       template && template.is_active
@@ -245,8 +258,20 @@ export class NotificationProcessor {
       text: rendered.text,
     });
 
+    // Only surface the in-app notification once the email has actually gone out.
+    await this.notifications
+      .createNotification({
+        userId,
+        type: 'CLIENT_ETA',
+        title: 'Client ETA sent',
+        body: `Arrival notification sent to ${nextJob.client_name ?? 'your next client'} (~${driveMins} min).`,
+        jobId: nextJob.id,
+        actionUrl: `/jobs/${nextJob.id}`,
+      })
+      .catch(() => {});
+
     this.logger.log(
-      `Client ETA sent to ${nextJob.client_email} · ${etaMins} min`,
+      `Client ETA sent to ${nextJob.client_email} · ${driveMins} min`,
     );
   }
 
