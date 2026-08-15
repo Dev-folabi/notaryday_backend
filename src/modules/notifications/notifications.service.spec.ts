@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { NotificationsService } from './notifications.service';
+import { EmailRendererService } from '../../common/email/email-renderer.service';
 
 describe('NotificationsService web push', () => {
   const config = {
@@ -25,6 +26,7 @@ describe('NotificationsService web push', () => {
     const service = new NotificationsService(
       config as unknown as ConfigService,
       prisma as unknown as PrismaService,
+      {} as EmailRendererService,
     );
     prisma.pushSubscription.upsert.mockResolvedValue({ id: 'subscription-1' });
     prisma.pushSubscription.findUnique.mockResolvedValue(null);
@@ -50,6 +52,7 @@ describe('NotificationsService web push', () => {
     const service = new NotificationsService(
       config as unknown as ConfigService,
       prisma as unknown as PrismaService,
+      {} as EmailRendererService,
     );
 
     await service.sendPushToUser('user-1', {

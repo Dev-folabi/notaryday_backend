@@ -4,6 +4,7 @@ import { PrismaService } from 'src/config/prisma.service';
 import { PlanTier, Prisma } from '../../../generated/prisma';
 import crypto from 'crypto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EmailRendererService } from '../../common/email/email-renderer.service';
 
 export interface LemonSqueezyAttributes {
   variant_id: number;
@@ -46,6 +47,7 @@ export class BillingService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly emailRenderer: EmailRendererService,
   ) {}
 
   /**
@@ -397,10 +399,22 @@ export class BillingService {
       url: '/settings?tab=billing',
       tag: `payment-failed-${data.id}`,
     });
+    const rendered = this.emailRenderer.render({
+      title: 'Subscription payment failed',
+      subtitle: 'Notary Day · Billing update',
+      greeting: `Hi ${user.full_name ?? user.username},`,
+      intro: 'We could not process your Notary Day subscription payment.',
+      contentHtml:
+        '<p style="font-size:13px;line-height:1.7;color:#475569">Your access remains active while payment retries continue. Please update your billing details.</p>',
+      action: { label: 'Open billing settings', url: '/settings?tab=billing' },
+      plainText:
+        'We could not process your Notary Day subscription payment. Your access remains active while retries continue. Update your billing details.',
+    });
     await this.notifications.sendEmail({
       to: user.email,
       subject: 'Your Notary Day payment failed',
-      html: '<p>We could not process your Notary Day subscription payment. Your access remains active while payment retries continue. Please update your billing details.</p>',
+      html: rendered.html,
+      text: rendered.text,
     });
     this.logger.warn(
       `Payment failed for user ${user.id}, subscription ${data.id}`,

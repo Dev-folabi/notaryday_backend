@@ -26,6 +26,7 @@ export const validationSchema = Joi.object({
   // Resend
   RESEND_API_KEY: Joi.string().required(),
   RESEND_IMPORT_DOMAIN: Joi.string().default('inbound.notaryday.app'),
+  EMAIL_ASSET_BASE_URL: Joi.string().uri().allow('').default(''),
 
   // Native Web Push (optional; generate once with `npx web-push generate-vapid-keys`)
   WEB_PUSH_VAPID_PUBLIC_KEY: Joi.string().allow('').default(''),

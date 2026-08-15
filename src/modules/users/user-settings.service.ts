@@ -8,6 +8,7 @@ export const DEFAULT_NOTIFICATION_PREFS = {
   scanback_reminder: true,
   new_booking_received: true,
   job_imported: true,
+  import_failed: true,
   payment_received: true,
   plan_expiring: true,
   payment_failed: true,

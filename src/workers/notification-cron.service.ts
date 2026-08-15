@@ -8,6 +8,7 @@ import { JobStatus, PlanTier } from '../../generated/prisma';
 import { UserSettingsService } from '../modules/users/user-settings.service';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { ConfigService } from '@nestjs/config';
+import { EmailRendererService } from '../common/email/email-renderer.service';
 
 @Injectable()
 export class NotificationCronService {
@@ -18,6 +19,7 @@ export class NotificationCronService {
     private readonly userSettings: UserSettingsService,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
+    private readonly emailRenderer: EmailRendererService,
     @InjectQueue(QUEUE_NOTIFICATION) private readonly notifQueue: Queue,
   ) {}
 
@@ -195,11 +197,25 @@ export class NotificationCronService {
         url: '/settings?tab=billing',
         tag: `plan-expiring-${user.id}`,
       });
+      const rendered = this.emailRenderer.render({
+        title: 'Your plan expires in 3 days',
+        subtitle: 'Notary Day · Billing update',
+        greeting: `Hi ${user.full_name ?? user.username},`,
+        intro: `Your plan expires on <strong style="color:#0F2C4E">${user.plan_expires_at?.toLocaleDateString()}</strong>.`,
+        contentHtml:
+          '<p style="font-size:13px;line-height:1.7;color:#475569">Visit billing settings to keep your Pro features active.</p>',
+        action: {
+          label: 'Open billing settings',
+          url: '/settings?tab=billing',
+        },
+        plainText: `Your plan expires on ${user.plan_expires_at?.toLocaleDateString()}. Open billing settings to keep your Pro features active.`,
+      });
       await this.notifications
         .sendEmail({
           to: user.email,
           subject: 'Your Notary Day plan expires in 3 days',
-          html: `<p>Your Notary Day plan expires on <strong>${user.plan_expires_at?.toLocaleDateString()}</strong>. Visit billing settings to keep your Pro features active.</p>`,
+          html: rendered.html,
+          text: rendered.text,
         })
         .catch((err) =>
           this.logger.error(

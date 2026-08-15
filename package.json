@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "prisma generate && nest build && cp -r generated dist/",
+    "build": "prisma generate && nest build && cp -r generated dist/ && mkdir -p dist/src/common/email && cp -r src/common/email/assets dist/src/common/email/",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

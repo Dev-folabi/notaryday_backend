@@ -7,6 +7,7 @@ import { CalendarSyncProcessor } from './calendar-sync.processor';
 import { NotificationCronService } from './notification-cron.service';
 import { NotificationsModule } from '../modules/notifications/notifications.module';
 import { UsersModule } from '../modules/users/users.module';
+import { EmailTemplatesModule } from '../modules/email-templates/email-templates.module';
 import {
   QUEUE_JOB_IMPORT,
   QUEUE_INVOICE,
@@ -24,6 +25,7 @@ import {
     ),
     NotificationsModule,
     UsersModule,
+    EmailTemplatesModule,
   ],
   providers: [
     JobImportProcessor,

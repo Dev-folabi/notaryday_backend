@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import { PrismaService } from '../../config/prisma.service';
 import webpush from 'web-push';
+import { EmailRendererService } from '../../common/email/email-renderer.service';
 
 @Injectable()
 export class NotificationsService {
@@ -14,6 +15,7 @@ export class NotificationsService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly emailRenderer: EmailRendererService,
   ) {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
     if (!apiKey) {
@@ -89,38 +91,24 @@ export class NotificationsService {
    * Send welcome/onboarding email to new user
    */
   async sendWelcomeEmail(userEmail: string, userName: string) {
-    const subject = 'Welcome to Notary Day!';
-    const html = `
-      <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #0F2C4E;">Welcome to Notary Day, ${userName}!</h1>
-        <p>Thank you for signing up for Notary Day - the smart scheduling and business management tool built specifically for mobile notaries and loan signing agents.</p>
-
-        <h2 style="color: #0F2C4E;">Getting Started:</h2>
-        <ol>
-          <li>Complete your onboarding (home base, mileage rate, signing types)</li>
-          <li>Try our free "Can I Take This?" feature to check job feasibility</li>
-          <li>Explore the dashboard to see your day at a glance</li>
-        </ol>
-
-        <p style="background-color: #FEF3C7; padding: 16px; border-radius: 8px; margin: 20px 0;">
-          <strong>Pro Tip:</strong> The floating "Can I Take This?" button is available on every screen - tap it anytime you get a job inquiry to instantly check if it fits your schedule and is profitable!
-        </p>
-
-        <p>If you have any questions, don't hesitate to reach out. We're here to help you succeed!</p>
-
-        <p>Best regards,<br>The Notary Day Team</p>
-
-        <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 24px 0;">
-        <p style="font-size: 12px; color: #64748B;">
-          You're receiving this email because you signed up for Notary Day at notaryday.app
-        </p>
-      </div>
-    `;
+    const rendered = this.emailRenderer.render({
+      title: `Welcome to Notary Day, ${userName}!`,
+      subtitle: 'Getting started with your notary workspace',
+      greeting: `Hi ${userName},`,
+      intro:
+        'Notary Day helps mobile notaries manage scheduling, jobs, profitability, and client communication in one place.',
+      contentHtml:
+        '<ol style="margin:0;padding-left:20px;color:#475569;font-size:13px;line-height:1.8"><li>Complete onboarding with your home base and signing types.</li><li>Try Can I Take This? for your next job inquiry.</li><li>Explore your day view and job schedule.</li></ol><div style="margin-top:18px;padding:12px 14px;border-radius:8px;background:#FFFBEB;border:1px solid #FDE68A;color:#475569;font-size:12px;line-height:1.6"><strong style="color:#0F2C4E">Pro tip:</strong> Use CITT before committing to a job to check schedule fit and profitability.</div>',
+      footer:
+        'You are receiving this email because you signed up for Notary Day.',
+      plainText: `Welcome to Notary Day, ${userName}. Complete onboarding, try CITT, and explore your schedule.`,
+    });
 
     return this.sendEmail({
       to: userEmail,
-      subject,
-      html,
+      subject: 'Welcome to Notary Day!',
+      html: rendered.html,
+      text: rendered.text,
     });
   }
 
@@ -133,35 +121,24 @@ export class NotificationsService {
     appUrl: string,
   ) {
     const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
-    const subject = 'Reset your Notary Day password';
-    const html = `
-      <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #0F2C4E;">Reset your Notary Day password</h1>
-        <p>We received a request to reset your password for your Notary Day account.</p>
-
-        <p>Click the button below to reset your password. This link will expire in 1 hour for security reasons:</p>
-
-        <div style="text-align: center; margin: 24px 0;">
-          <a href="${resetUrl}" style="background-color: #0F2C4E; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">
-            Reset Password
-          </a>
-        </div>
-
-        <p>If you didn't request this password reset, please ignore this email. Your password will remain unchanged.</p>
-
-        <p>Best regards,<br>The Notary Day Team</p>
-
-        <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 24px 0;">
-        <p style="font-size: 12px; color: #64748B;">
-          You're receiving this email because you have an account with Notary Day at notaryday.app
-        </p>
-      </div>
-    `;
+    const rendered = this.emailRenderer.render({
+      title: 'Reset your Notary Day password',
+      subtitle: 'Password reset request',
+      intro:
+        'We received a request to reset your Notary Day password. This link expires in one hour.',
+      contentHtml:
+        '<p style="font-size:13px;line-height:1.7;color:#475569">If you did not request this, you can safely ignore this email.</p>',
+      action: { label: 'Reset password', url: resetUrl },
+      footer:
+        'You are receiving this email because you have an account with Notary Day.',
+      plainText: `Reset your Notary Day password using this link: ${resetUrl}. The link expires in one hour.`,
+    });
 
     return this.sendEmail({
       to: userEmail,
-      subject,
-      html,
+      subject: 'Reset your Notary Day password',
+      html: rendered.html,
+      text: rendered.text,
     });
   }
 
@@ -172,6 +149,7 @@ export class NotificationsService {
     to: string;
     subject: string;
     html: string;
+    text?: string;
   }) {
     return this.sendEmail(options);
   }

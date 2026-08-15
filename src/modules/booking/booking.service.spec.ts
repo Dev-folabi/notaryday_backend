@@ -7,6 +7,7 @@ import { OrsService } from '../../common/services/ors.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailTemplatesService } from '../email-templates/email-templates.service';
+import { EmailRendererService } from '../../common/email/email-renderer.service';
 import {
   BookingStatus,
   JobSource,
@@ -99,7 +100,10 @@ describe('BookingService', () => {
     };
     $transaction: jest.Mock;
   };
-  let settingsService: { get: jest.Mock };
+  let settingsService: {
+    get: jest.Mock;
+    getNotificationConfig: jest.Mock;
+  };
   let emailTemplates: { findByType: jest.Mock; render: jest.Mock };
 
   const tx = {
@@ -138,7 +142,15 @@ describe('BookingService', () => {
       fn(tx),
     );
 
-    settingsService = { get: jest.fn().mockResolvedValue(makeSettings()) };
+    settingsService = {
+      get: jest.fn().mockResolvedValue(makeSettings()),
+      getNotificationConfig: jest.fn().mockResolvedValue({
+        prefs: {
+          new_booking_received: true,
+          client_booking_confirmation: true,
+        },
+      }),
+    };
     emailTemplates = {
       findByType: jest.fn().mockResolvedValue(null),
       render: jest.fn(),
@@ -168,9 +180,20 @@ describe('BookingService', () => {
           useValue: {
             createNotification: jest.fn().mockResolvedValue(undefined),
             sendEmail: jest.fn().mockResolvedValue(undefined),
+            sendPushToUser: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: EmailTemplatesService, useValue: emailTemplates },
+        {
+          provide: EmailRendererService,
+          useValue: {
+            render: jest.fn((data: { plainText: string }) => ({
+              html: `<p>${data.plainText}</p>`,
+              text: data.plainText,
+            })),
+            detailBlock: jest.fn().mockReturnValue('<div>details</div>'),
+          },
+        },
       ],
     }).compile();
 

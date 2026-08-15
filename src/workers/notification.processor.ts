@@ -5,6 +5,8 @@ import { PrismaService } from '../config/prisma.service';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { QUEUE_NOTIFICATION } from '../queues/queue.constants';
 import { UserSettingsService } from '../modules/users/user-settings.service';
+import { EmailRendererService } from '../common/email/email-renderer.service';
+import { EmailTemplatesService } from '../modules/email-templates/email-templates.service';
 
 @Processor(QUEUE_NOTIFICATION)
 export class NotificationProcessor {
@@ -14,6 +16,8 @@ export class NotificationProcessor {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly userSettings: UserSettingsService,
+    private readonly emailRenderer: EmailRendererService,
+    private readonly emailTemplates: EmailTemplatesService,
   ) {}
 
   @Process('send-reminder')
@@ -54,10 +58,27 @@ export class NotificationProcessor {
     });
 
     if (type === 'pre_signing') {
+      const rendered = this.emailRenderer.render({
+        title: 'Signing reminder',
+        subtitle: 'Your upcoming appointment',
+        greeting: `Hi ${user.full_name ?? 'there'},`,
+        intro: `Your signing appointment starts in <strong style="color:#0F2C4E">${leadMins} minutes</strong>.`,
+        contentHtml: this.emailRenderer.detailBlock([
+          ['Notary', user.full_name ?? 'Notary Day'],
+          ['Date', signingJob.appointment_time.toLocaleDateString()],
+          ['Time', signingJob.appointment_time.toLocaleTimeString()],
+          ['Address', signingJob.address],
+          ['Service', signingJob.signing_type.replace('_', ' ')],
+        ]),
+        footer:
+          'Please have all documents ready and ensure the signers are present with valid photo ID.',
+        plainText: `Your signing at ${signingJob.address} starts in ${leadMins} minutes.`,
+      });
       await this.notifications.sendEmail({
         to: user.email,
         subject: `Reminder: Signing at ${signingJob.address} in ${leadMins} min`,
-        html: `<p>Your signing at <strong>${signingJob.address}</strong> starts at ${signingJob.appointment_time.toLocaleTimeString()}.</p>`,
+        html: rendered.html,
+        text: rendered.text,
       });
     }
 
@@ -93,11 +114,44 @@ export class NotificationProcessor {
     const minutesUntil =
       (signingJob.appointment_time.getTime() - Date.now()) / 60_000;
     if (minutesUntil < 23 * 60 || minutesUntil > 25 * 60) return;
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return;
+    const template = await this.emailTemplates.findByType(
+      userId,
+      'appointment_reminder',
+    );
+    const custom =
+      template && template.is_active
+        ? this.emailTemplates.render(template, {
+            client_name: signingJob.client_name ?? 'there',
+            notary_name: user.full_name ?? user.username,
+            appointment_time: signingJob.appointment_time.toLocaleString(),
+            address: signingJob.address,
+            service_type: signingJob.signing_type.replace('_', ' '),
+          })
+        : null;
 
+    const rendered = this.emailRenderer.render({
+      title: 'Appointment reminder',
+      subtitle: `Sent on behalf of ${user.full_name ?? 'your notary'}`,
+      greeting: `Hi ${signingJob.client_name ?? 'there'},`,
+      intro:
+        custom?.body ??
+        `Your notary signing is scheduled for <strong style="color:#0F2C4E">${signingJob.appointment_time.toLocaleString()}</strong>.`,
+      contentHtml: this.emailRenderer.detailBlock([
+        ['Notary', user.full_name ?? 'Notary Day'],
+        ['Date', signingJob.appointment_time.toLocaleDateString()],
+        ['Time', signingJob.appointment_time.toLocaleTimeString()],
+        ['Address', signingJob.address],
+        ['Service', signingJob.signing_type.replace('_', ' ')],
+      ]),
+      plainText: `Your appointment is scheduled for ${signingJob.appointment_time.toLocaleString()} at ${signingJob.address}.`,
+    });
     await this.notifications.sendEmail({
       to: signingJob.client_email,
-      subject: 'Your notary appointment is tomorrow',
-      html: `<p>Your signing at <strong>${signingJob.address}</strong> is scheduled for ${signingJob.appointment_time.toLocaleString()}.</p>`,
+      subject: custom?.subject ?? 'Your notary appointment is tomorrow',
+      html: rendered.html,
+      text: rendered.text,
     });
     await this.prisma.notification.create({
       data: {
@@ -122,12 +176,47 @@ export class NotificationProcessor {
       where: { id: nextJobId },
     });
     if (!nextJob?.client_email) return;
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return;
+    const template = await this.emailTemplates.findByType(userId, 'client_eta');
+    const custom =
+      template && template.is_active
+        ? this.emailTemplates.render(template, {
+            client_name: nextJob.client_name ?? 'there',
+            notary_name: user.full_name ?? user.username,
+            eta_time: new Date(
+              Date.now() + etaMins * 60_000,
+            ).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          })
+        : null;
 
     const etaTime = new Date(Date.now() + etaMins * 60_000);
+    const rendered = this.emailRenderer.render({
+      title: 'Your notary is on the way',
+      subtitle: 'Client ETA update',
+      greeting: `Hi ${nextJob.client_name ?? 'there'},`,
+      intro:
+        custom?.body ??
+        `Your notary is heading to you and will arrive at approximately <strong style="color:#0F2C4E">${etaTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</strong>.`,
+      contentHtml: this.emailRenderer.detailBlock([
+        ['Address', nextJob.address],
+        ['Service', nextJob.signing_type.replace('_', ' ')],
+        [
+          'Estimated arrival',
+          etaTime.toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+          }),
+        ],
+      ]),
+      footer: 'Please have your ID ready for the signing.',
+      plainText: `Your notary is heading to you and will arrive at approximately ${etaTime.toLocaleTimeString()}.`,
+    });
     await this.notifications.sendEmail({
       to: nextJob.client_email,
-      subject: 'Your notary is on the way',
-      html: `<p>Your notary is heading to you and will arrive at approximately <strong>${etaTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</strong>.</p>`,
+      subject: custom?.subject ?? 'Your notary is on the way',
+      html: rendered.html,
+      text: rendered.text,
     });
 
     this.logger.log(
@@ -159,16 +248,23 @@ export class NotificationProcessor {
     const net = jobs.reduce((s, j) => s + Number(j.net_earnings ?? j.fee), 0);
     const miles = jobs.reduce((s, j) => s + Number(j.mileage_miles ?? 0), 0);
 
+    const rendered = this.emailRenderer.render({
+      title: 'Your day is complete',
+      subtitle: `Daily summary · ${day.toLocaleDateString()}`,
+      greeting: `Hi ${user.full_name ?? user.username},`,
+      intro: `${jobs.length} signings completed today.`,
+      contentHtml: this.emailRenderer.detailBlock([
+        ['Gross', `$${gross.toFixed(2)}`],
+        ['Net', `$${net.toFixed(2)}`],
+        ['Miles', miles.toFixed(1)],
+      ]),
+      plainText: `${jobs.length} signings completed. Gross $${gross.toFixed(2)}, net $${net.toFixed(2)}, miles ${miles.toFixed(1)}.`,
+    });
     await this.notifications.sendEmail({
       to: user.email,
       subject: `Day summary: ${jobs.length} signings · $${net.toFixed(0)} net`,
-      html: `
-        <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto">
-          <h2 style="color:#0F2C4E">Your day — ${day.toLocaleDateString()}</h2>
-          <p><strong>${jobs.length}</strong> signings completed</p>
-          <p>Gross: $${gross.toFixed(2)} · Net: $${net.toFixed(2)} · Miles: ${miles.toFixed(1)}</p>
-        </div>
-      `,
+      html: rendered.html,
+      text: rendered.text,
     });
 
     await this.prisma.notification.create({

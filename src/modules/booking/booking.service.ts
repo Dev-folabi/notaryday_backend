@@ -10,6 +10,7 @@ import { OrsService } from '../../common/services/ors.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailTemplatesService } from '../email-templates/email-templates.service';
+import { EmailRendererService } from '../../common/email/email-renderer.service';
 import { CreateBookingDto, DeclineBookingDto } from './dto/booking.dto';
 import {
   BookingStatus,
@@ -99,6 +100,7 @@ export class BookingService {
     private readonly userSettings: UserSettingsService,
     private readonly notifications: NotificationsService,
     private readonly emailTemplates: EmailTemplatesService,
+    private readonly emailRenderer: EmailRendererService,
   ) {}
 
   /** Public: create a booking request */
@@ -489,20 +491,29 @@ export class BookingService {
       requested_time: Date;
       address: string;
     },
-  ): Promise<{ to: string; subject: string; html: string }> {
+  ): Promise<{ to: string; subject: string; html: string; text?: string }> {
     const notaryName = notary?.full_name ?? notary?.username ?? 'your notary';
+    const contentHtml = this.emailRenderer.detailBlock([
+      ['Notary', notaryName],
+      ['Date', booking.requested_time.toLocaleDateString()],
+      ['Time', booking.requested_time.toLocaleTimeString()],
+      ['Address', booking.address],
+      ['Service', booking.service_type.replace('_', ' ')],
+    ]);
+    const designed = this.emailRenderer.render({
+      title: 'Your signing is booked',
+      subtitle: 'Notary Day · Booking confirmation',
+      greeting: `Hi ${booking.client_name},`,
+      intro: 'Your signing appointment has been confirmed.',
+      contentHtml,
+      footer: `You will receive a reminder email 24 hours before your appointment. To cancel, contact ${notaryName} directly.`,
+      plainText: `Your signing with ${notaryName} is confirmed for ${booking.requested_time.toLocaleString()} at ${booking.address}.`,
+    });
     const fallback = {
       to: booking.client_email,
       subject: 'Your signing appointment is confirmed',
-      html: `
-        <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto">
-          <h2 style="color:#0F2C4E">Appointment Confirmed</h2>
-          <p>Hi ${booking.client_name},</p>
-          <p>Your ${booking.service_type.replace('_', ' ')} signing with ${notaryName} is confirmed.</p>
-          <p><strong>Date:</strong> ${booking.requested_time.toLocaleString()}</p>
-          <p><strong>Location:</strong> ${booking.address}</p>
-        </div>
-      `,
+      html: designed.html,
+      text: designed.text,
     };
     const rendered = await this.renderBookingEmail(
       notaryId,
@@ -517,7 +528,17 @@ export class BookingService {
         service_type: booking.service_type.replace('_', ' '),
       },
     );
-    return rendered ?? fallback;
+    if (!rendered) return fallback;
+    const customized = this.emailRenderer.render({
+      title: 'Your signing is booked',
+      subtitle: 'Notary Day · Booking confirmation',
+      greeting: `Hi ${booking.client_name},`,
+      intro: rendered.html,
+      contentHtml,
+      footer: `To cancel, contact ${notaryName} directly.`,
+      plainText: rendered.text,
+    });
+    return { ...rendered, html: customized.html, text: customized.text };
   }
 
   private async buildDeclineEmail(
@@ -530,22 +551,33 @@ export class BookingService {
       requested_time: Date;
     },
     dto: DeclineBookingDto,
-  ): Promise<{ to: string; subject: string; html: string }> {
+  ): Promise<{ to: string; subject: string; html: string; text?: string }> {
     const notaryName = notary?.full_name ?? notary?.username ?? 'your notary';
     const altTimes = (dto.alternative_times ?? [])
       .map((t) => new Date(t).toLocaleString())
       .join('<br>');
+    const contentHtml = this.emailRenderer.detailBlock([
+      ['Notary', notaryName],
+      ['Requested time', booking.requested_time.toLocaleString()],
+      ['Service', booking.service_type.replace('_', ' ')],
+      ...(dto.reason
+        ? ([['Reason', dto.reason]] as Array<[string, string]>)
+        : []),
+    ]);
+    const designed = this.emailRenderer.render({
+      title: 'Booking update',
+      subtitle: 'Notary Day · Booking request',
+      greeting: `Hi ${booking.client_name},`,
+      intro:
+        'Unfortunately, your requested signing time could not be accommodated.',
+      contentHtml: `${contentHtml}${altTimes ? `<p style="font-size:12px;line-height:1.6;color:#475569"><strong>Alternative times</strong><br>${altTimes}</p>` : ''}`,
+      plainText: `Your booking request for ${booking.requested_time.toLocaleString()} could not be accommodated.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+    });
     const fallback = {
       to: booking.client_email,
       subject: 'Update on your signing request',
-      html: `
-        <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto">
-          <h2 style="color:#0F2C4E">Booking Update</h2>
-          <p>Hi ${booking.client_name},</p>
-          <p>Unfortunately, ${booking.service_type.replace('_', ' ')} signing request for ${booking.requested_time.toLocaleString()} could not be accommodated${dto.reason ? `: ${dto.reason}` : '.'}</p>
-          ${altTimes ? `<p>Alternative times you may request:<br>${altTimes}</p>` : ''}
-        </div>
-      `,
+      html: designed.html,
+      text: designed.text,
     };
     const rendered = await this.renderBookingEmail(
       notaryId,
@@ -561,7 +593,16 @@ export class BookingService {
         alternative_times: altTimes,
       },
     );
-    return rendered ?? fallback;
+    if (!rendered) return fallback;
+    const customized = this.emailRenderer.render({
+      title: 'Booking update',
+      subtitle: 'Notary Day · Booking request',
+      greeting: `Hi ${booking.client_name},`,
+      intro: rendered.html,
+      contentHtml,
+      plainText: rendered.text,
+    });
+    return { ...rendered, html: customized.html, text: customized.text };
   }
 
   private async renderBookingEmail(
@@ -569,12 +610,25 @@ export class BookingService {
     type: string,
     to: string,
     vars: Record<string, string>,
-  ): Promise<{ to: string; subject: string; html: string } | null> {
+  ): Promise<{
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  } | null> {
     try {
       const template = await this.emailTemplates.findByType(notaryId, type);
       if (!template) return null;
       const rendered = this.emailTemplates.render(template, vars);
-      return { to, subject: rendered.subject, html: rendered.body };
+      return {
+        to,
+        subject: rendered.subject,
+        html: rendered.body,
+        text: rendered.body
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      };
     } catch {
       return null;
     }

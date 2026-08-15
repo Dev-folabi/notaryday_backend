@@ -10,6 +10,7 @@ import { QUEUE_JOB_IMPORT } from '../queues/queue.constants';
 import { ImportStatus, SigningType } from '../../generated/prisma';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { UserSettingsService } from '../modules/users/user-settings.service';
+import { EmailRendererService } from '../common/email/email-renderer.service';
 
 const PARSE_EMAIL = 'parse-email';
 const PARSE_SCREENSHOT = 'parse-screenshot';
@@ -37,6 +38,7 @@ export class JobImportProcessor {
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
     private readonly userSettings: UserSettingsService,
+    private readonly emailRenderer: EmailRendererService,
   ) {}
 
   @Process(PARSE_EMAIL)
@@ -259,24 +261,25 @@ export class JobImportProcessor {
       });
       const appUrl =
         this.config.get<string>('APP_URL') || 'http://localhost:3000';
+      const rendered = this.emailRenderer.render({
+        title: 'Job import ready',
+        subtitle:
+          channel === 'email' ? 'Forwarded email parsed' : 'Screenshot parsed',
+        greeting: `Hi ${user.full_name || user.username || 'Notary'},`,
+        intro: 'Your import was successfully parsed and is ready for review.',
+        contentHtml:
+          '<p style="font-size:13px;line-height:1.7;color:#475569">Review the extracted details and confirm the job before adding it to your schedule.</p>',
+        action: {
+          label: 'Review import',
+          url: `${appUrl}/import?review=${importId}`,
+        },
+        plainText: `Your ${channel === 'email' ? 'forwarded email' : 'uploaded screenshot'} was parsed. Review it at ${appUrl}/import?review=${importId}.`,
+      });
       await this.notifications.sendNotificationEmail({
         to: user.email,
         subject: 'Your job import is ready for review',
-        html: `
-          <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #0F2C4E;">Job Import Ready</h1>
-            <p>Hi ${user.full_name || user.username || 'Notary'},</p>
-            <p>Your ${
-              channel === 'email' ? 'forwarded email' : 'uploaded screenshot'
-            } has been successfully parsed by Notary Day.</p>
-            <p>Please log in to review the details and confirm the signing job.</p>
-            <div style="text-align: center; margin: 24px 0;">
-              <a href="${appUrl}/import?review=${importId}" style="background-color: #0F2C4E; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">
-                Review Import
-              </a>
-            </div>
-          </div>
-        `,
+        html: rendered.html,
+        text: rendered.text,
       });
     }
 
@@ -293,6 +296,46 @@ export class JobImportProcessor {
         error_message: errorMessage,
         processed_at: new Date(),
       },
+    });
+
+    const importRecord = await this.prisma.jobImport.findUnique({
+      where: { id: importId },
+      select: { user_id: true },
+    });
+    if (!importRecord) return;
+    const user = await this.prisma.user.findUnique({
+      where: { id: importRecord.user_id },
+    });
+    const config = await this.userSettings.getNotificationConfig(
+      importRecord.user_id,
+    );
+    if (!user || !config.prefs.import_failed) return;
+
+    await this.notifications.sendPushToUser(importRecord.user_id, {
+      title: 'Import failed',
+      body: 'An import could not be parsed. Tap to enter the job manually.',
+      url: '/jobs/new',
+      tag: `import-failed-${importId}`,
+    });
+    const rendered = this.emailRenderer.render({
+      title: 'Import failed',
+      subtitle: 'Manual review needed',
+      greeting: `Hi ${user.full_name || user.username || 'Notary'},`,
+      intro: 'We could not automatically parse this import.',
+      contentHtml:
+        '<p style="font-size:13px;line-height:1.7;color:#475569">You can enter the signing details manually and add the job to your schedule.</p>',
+      action: {
+        label: 'Enter job manually',
+        url: `${this.config.get<string>('APP_URL') || 'http://localhost:3000'}/jobs/new`,
+      },
+      plainText:
+        'We could not automatically parse this import. Enter the job manually to add it to your schedule.',
+    });
+    await this.notifications.sendNotificationEmail({
+      to: user.email,
+      subject: 'Your job import needs manual review',
+      html: rendered.html,
+      text: rendered.text,
     });
   }
 }
