@@ -54,12 +54,24 @@ export class UsersService {
   }): Promise<User> {
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_SALT_ROUNDS);
 
+    const trialEnabled =
+      this.configService.get<string>('TRIAL_PLAN') === 'true';
+    const trialDays = this.configService.get<number>('TRIAL_DAYS') ?? 30;
+
     return this.prisma.user.create({
       data: {
         email: data.email.toLowerCase(),
         password_hash: passwordHash,
         username: data.username.toLowerCase(),
         full_name: data.fullName ?? null,
+        ...(trialEnabled
+          ? {
+              plan: PlanTier.PRO,
+              plan_expires_at: new Date(
+                Date.now() + trialDays * 24 * 60 * 60 * 1000,
+              ),
+            }
+          : {}),
         settings: {
           create: {
             irs_rate_per_mile:

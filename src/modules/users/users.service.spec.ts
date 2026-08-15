@@ -11,6 +11,7 @@ describe('UsersService account management', () => {
     user: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      create: jest.fn(),
     },
     passwordResetToken: {
       create: jest.fn(),
@@ -95,6 +96,70 @@ describe('UsersService account management', () => {
       await expect(service.softDeleteAccount('nope')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('create() trial grant', () => {
+    const config = { get: jest.fn() };
+    const createMock = prisma.user.create;
+
+    beforeEach(async () => {
+      jest.clearAllMocks();
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          UsersService,
+          { provide: PrismaService, useValue: prisma },
+          { provide: ConfigService, useValue: config },
+        ],
+      }).compile();
+      service = module.get<UsersService>(UsersService);
+    });
+
+    it('grants a Pro trial when TRIAL_PLAN=true', async () => {
+      config.get.mockImplementation((key: string) => {
+        if (key === 'IRS_RATE_PER_MILE') return 0.725;
+        if (key === 'TRIAL_PLAN') return 'true';
+        if (key === 'TRIAL_DAYS') return 30;
+        return undefined;
+      });
+      createMock.mockResolvedValue({ id: 'u1' });
+
+      await service.create({
+        email: 'a@b.com',
+        password: 'secret123',
+        username: 'ab',
+      });
+
+      expect(createMock).toHaveBeenCalledTimes(1);
+      const calls = createMock.mock.calls as unknown as [
+        { data: { plan: string; plan_expires_at: Date } },
+      ][];
+      const arg = calls[0][0];
+      expect(arg.data.plan).toBe('PRO');
+      const expected = Date.now() + 30 * 24 * 60 * 60 * 1000;
+      expect(
+        Math.abs(arg.data.plan_expires_at.getTime() - expected),
+      ).toBeLessThan(5000);
+    });
+
+    it('creates a FREE account when TRIAL_PLAN is off', async () => {
+      config.get.mockImplementation((key: string) =>
+        key === 'IRS_RATE_PER_MILE' ? 0.725 : undefined,
+      );
+      createMock.mockResolvedValue({ id: 'u1' });
+
+      await service.create({
+        email: 'a@b.com',
+        password: 'secret123',
+        username: 'ab',
+      });
+
+      const calls = createMock.mock.calls as unknown as [
+        { data: Record<string, unknown> },
+      ][];
+      const arg = calls[0][0];
+      expect(arg.data.plan).toBeUndefined();
+      expect(arg.data.plan_expires_at).toBeUndefined();
     });
   });
 });

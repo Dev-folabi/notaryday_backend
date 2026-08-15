@@ -216,6 +216,8 @@ export class BillingService {
       lemonSqueezyCustomerId: user.lemon_squeezy_customer_id,
       lemonSqueezySubscriptionId: user.lemon_squeezy_subscription_id,
       planExpiresAt: user.plan_expires_at,
+      isTrial:
+        user.plan !== PlanTier.FREE && !user.lemon_squeezy_subscription_id,
     };
   }
 

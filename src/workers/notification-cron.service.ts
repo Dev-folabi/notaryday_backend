@@ -225,4 +225,87 @@ export class NotificationCronService {
         );
     }
   }
+
+  /** Daily: end expired Pro trials. Trial users have no Lemon Squeezy
+   *  subscription, so they are never touched by webhook lifecycles. */
+  @Cron('0 6 * * *')
+  async expireTrials() {
+    const now = new Date();
+    const users = await this.prisma.user.findMany({
+      where: {
+        deleted_at: null,
+        plan: { in: [PlanTier.PRO, PlanTier.PRO_ANNUAL] },
+        plan_expires_at: { lt: now },
+        lemon_squeezy_subscription_id: null,
+      },
+    });
+
+    if (users.length === 0) return;
+
+    for (const user of users) {
+      try {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { plan: PlanTier.FREE, plan_expires_at: null },
+        });
+        this.logger.log(`Trial ended for user ${user.id}, downgraded to FREE`);
+      } catch (err) {
+        this.logger.error(
+          `Failed to end trial for user ${user.id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+  }
+
+  /** Daily: remind trial users three days before their Pro trial ends. */
+  @Cron('0 9 * * *')
+  async dispatchTrialEndingEmails() {
+    const now = new Date();
+    const inThreeDays = new Date(now.getTime() + 3 * 24 * 60 * 60_000);
+    const inFourDays = new Date(now.getTime() + 4 * 24 * 60 * 60_000);
+    const users = await this.prisma.user.findMany({
+      where: {
+        deleted_at: null,
+        plan: { not: PlanTier.FREE },
+        plan_expires_at: { gte: inThreeDays, lt: inFourDays },
+        lemon_squeezy_subscription_id: null,
+      },
+    });
+
+    for (const user of users) {
+      try {
+        await this.notifications.sendPushToUser(user.id, {
+          title: 'Your Pro trial ends in 3 days',
+          body: 'Your free Pro access expires soon — upgrade to keep the features.',
+          url: '/settings?tab=billing',
+          tag: `trial-ending-${user.id}`,
+        });
+        const rendered = this.emailRenderer.render({
+          title: 'Your Pro trial ends in 3 days',
+          subtitle: 'Notary Day · Billing update',
+          greeting: `Hi ${user.full_name ?? user.username},`,
+          intro: `Your free Pro trial ends on <strong style="color:#0F2C4E">${user.plan_expires_at?.toLocaleDateString()}</strong>.`,
+          contentHtml:
+            '<p style="font-size:13px;line-height:1.7;color:#475569">After that, your account moves to Free and Pro features like route optimisation, the booking page, email import and auto invoicing are locked. Your data stays safe either way.</p>',
+          action: {
+            label: 'Keep Pro',
+            url: '/settings?tab=billing',
+          },
+          plainText: `Your free Pro trial ends on ${user.plan_expires_at?.toLocaleDateString()}. After that, your account moves to Free. Your data stays safe either way.`,
+        });
+        await this.notifications.sendEmail({
+          to: user.email,
+          subject: 'Your Notary Day Pro trial ends in 3 days',
+          html: rendered.html,
+          text: rendered.text,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to send trial ending email to ${user.id}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+  }
 }

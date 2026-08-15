@@ -63,4 +63,8 @@ export const validationSchema = Joi.object({
 
   // Application Defaults
   IRS_RATE_PER_MILE: Joi.number().default(0.725),
+
+  // New-account Pro trial (feature-flag gated)
+  TRIAL_PLAN: Joi.boolean().default(false),
+  TRIAL_DAYS: Joi.number().integer().min(1).default(30),
 });
