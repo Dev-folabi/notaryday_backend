@@ -80,7 +80,7 @@ export class JobsService {
     importId?: string,
   ) {
     // Idempotency: a client-supplied key means "this is the same logical
-    // create" — return the existing job instead of creating a duplicate.
+    // create"; return the existing job instead of creating a duplicate.
     if (idempotencyKey) {
       const existing = await this.prisma.job.findFirst({
         where: { idempotency_key: idempotencyKey, user_id: userId },
@@ -622,7 +622,7 @@ export class JobsService {
   /**
    * Driving distance/time from the home base to a geocoded point, using the
    * same ORS source as CITT (real road distance). Falls back to a straight-line
-   * (haversine) estimate — with zero drive time — when ORS is unavailable or
+   * (haversine) estimate, with zero drive time, when ORS is unavailable or
    * no home base / geo point is set, so jobs can still be created.
    */
   private async computeMileage(
@@ -702,7 +702,7 @@ export class JobsService {
     const date = appointmentTime.toISOString().slice(0, 10);
     try {
       // Best-effort cache invalidation: a slow/down Redis must never hold the
-      // response hostage — the job is already persisted.
+      // response hostage; the job is already persisted.
       await Promise.race([
         this.redis.del(`route:${userId}:${date}`),
         new Promise<void>((resolve) => setTimeout(resolve, 2000)),

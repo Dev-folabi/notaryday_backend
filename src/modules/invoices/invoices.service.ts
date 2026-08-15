@@ -172,7 +172,7 @@ export class InvoicesService {
     });
   }
 
-  /** Invoice summary stats — mirrors the frontend statusOf logic */
+  /** Invoice summary stats: mirrors the frontend statusOf logic */
   async findStats(userId: string) {
     const rows = await this.prisma.invoice.findMany({
       where: { user_id: userId, deleted_at: null },
@@ -191,7 +191,7 @@ export class InvoicesService {
       paid: 0,
       outstanding: 0,
       overdue: 0,
-      // Current (live) job fees for invoiced jobs — invoices store a snapshot
+      // Current (live) job fees for invoiced jobs; invoices store a snapshot
       // at generation time, so "earned" can diverge from "billed".
       earned: 0,
       // Travel/mileage fees captured on the invoices (portion of billed that is
@@ -264,7 +264,7 @@ export class InvoicesService {
     return updated;
   }
 
-  /** Queue email send for an existing invoice (only on manual "Send"/"Resend" —
+  /** Queue email send for an existing invoice (only on manual "Send"/"Resend";
    *  never automatic, and never re-enqueued by a cron afterwards). */
   async send(userId: string, id: string, recipientEmail?: string) {
     const invoice = await this.findOne(userId, id);
@@ -286,7 +286,7 @@ export class InvoicesService {
   }
 
   /** Auto-sync invoice amounts and recipient details to a job's current state.
-   *  Works for any unpaid invoice (draft or already sent) — only paid invoices
+   *  Works for any unpaid invoice (draft or already sent); only paid invoices
    *  are locked and keep the amount billed at generation time. */
   async syncDraftFromJob(
     userId: string,
@@ -300,7 +300,7 @@ export class InvoicesService {
   ) {
     const invoice = await this.findByJob(userId, jobId);
     if (!invoice) return;
-    // Paid invoices are locked — sent/unpaid ones stay in sync.
+    // Paid invoices are locked; sent/unpaid ones stay in sync.
     if (invoice.is_paid) return;
 
     const subtotal = Number(job.fee ?? 0);
@@ -357,7 +357,7 @@ export class InvoicesService {
   async update(userId: string, id: string, dto: UpdateInvoiceDto) {
     const invoice = await this.findOne(userId, id);
 
-    // Only paid invoices lock the amount — sent/unpaid invoices can still be
+    // Only paid invoices lock the amount; sent/unpaid invoices can still be
     // edited (and auto-synced from the job fee).
     if (invoice.is_paid && dto.final_fee !== undefined) {
       throw new BadRequestException('Paid invoices cannot change the amount');

@@ -36,7 +36,7 @@ export class GeocodingService {
     const normalised = this.normalise(address);
     const cacheKey = this.cacheKey(normalised);
 
-    // Redis cache (best-effort — a Redis failure falls through to DB/Nominatim)
+    // Redis cache (best-effort; a Redis failure falls through to DB/Nominatim)
     let cached: string | null = null;
     try {
       cached = await this.redis.get(cacheKey);

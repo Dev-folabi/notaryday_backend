@@ -81,7 +81,7 @@ export class JobImportService {
 
     // Queue for AI processing (body is fetched from Resend by the worker).
     // Best-effort: the import record is already persisted, so a slow/down
-    // Redis must not fail the Resend webhook — it buffers and flushes once
+    // Redis must not fail the Resend webhook; it buffers and flushes once
     // the connection recovers.
     await Promise.race([
       this.queue.add(
@@ -187,7 +187,7 @@ export class JobImportService {
       throw new Error('Failed to upload screenshot');
     }
 
-    // Create import record (unified model — no email sentinels needed)
+    // Create import record (unified model; no email sentinels needed)
     const importRecord = await this.prisma.jobImport.create({
       data: {
         user_id: userId,
@@ -202,7 +202,7 @@ export class JobImportService {
 
     // Queue for AI vision processing
     try {
-      // Best-effort: if Redis/queue is down, give up after 2s — the import
+      // Best-effort: if Redis/queue is down, give up after 2s; the import
       // record is already persisted and can be re-queued.
       await Promise.race([
         this.queue.add('parse-screenshot', {
@@ -307,7 +307,7 @@ export class JobImportService {
     return job;
   }
 
-  /** Decline an import (soft — keeps the record, removes it from the list) */
+  /** Decline an import (soft; keeps the record, removes it from the list) */
   async decline(userId: string, importId: string) {
     const record = await this.findOne(userId, importId);
     await this.prisma.jobImport.update({

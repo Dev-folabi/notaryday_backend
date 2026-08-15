@@ -95,7 +95,7 @@ export class UsersService {
     return bcrypt.compare(password, user.password_hash);
   }
 
-  /** Change password when the user is authenticated — verifies the current
+  /** Change password when the user is authenticated; verifies the current
    *  password before applying the new one. */
   async changePassword(
     userId: string,

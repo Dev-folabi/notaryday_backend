@@ -24,9 +24,9 @@ enum SigningType {
 }
 
 enum JobStatus {
-  PENDING // Created but not yet confirmed — notary hasn't committed
-  PENDING_REVIEW // Came in from booking page — awaiting notary approval
-  CONFIRMED // Notary has accepted — anchored in schedule
+  PENDING // Created but not yet confirmed; notary hasn't committed
+  PENDING_REVIEW // Came in from booking page; awaiting notary approval
+  CONFIRMED // Notary has accepted; anchored in schedule
   IN_PROGRESS // Signing has started (notary tapped "Start signing")
   SCANNING // Signing complete, scanback in progress
   COMPLETE // Scanback complete / job fully done
@@ -39,14 +39,14 @@ enum JobSource {
   EMAIL_IMPORT
   SCREENSHOT
   BOOKING_PAGE
-  CSV // V1.5 — not in MVP, keep enum for forward compatibility
+  CSV // V1.5, not in MVP; keep enum for forward compatibility
 }
 
 enum PlanTier {
   FREE
   PRO
   PRO_ANNUAL
-  TEAM // V2 — not in MVP
+  TEAM // V2, not in MVP
 }
 
 enum NavApp {
@@ -109,7 +109,7 @@ model User {
   plan                          PlanTier  @default(FREE)
   lemon_squeezy_customer_id     String?   @unique
   lemon_squeezy_subscription_id String?   @unique
-  plan_expires_at               DateTime? @db.Timestamptz // Used for PRO_ANNUAL only — monthly managed entirely by lemon_squeezy subscription status
+  plan_expires_at               DateTime? @db.Timestamptz // Used for PRO_ANNUAL only; monthly managed entirely by lemon_squeezy subscription status
 
   // Onboarding state
   onboarding_completed Boolean @default(false)
@@ -158,7 +158,7 @@ model UserSettings {
 
   // Mileage & profitability
   irs_rate_per_mile      Decimal @default(0.72) @db.Decimal(5, 4)
-  vehicle_type           String? // "car", "truck", "suv" — for future rate lookup
+  vehicle_type           String? // "car", "truck", "suv"; for future rate lookup
   min_acceptable_net     Decimal @default(20.00) @db.Decimal(8, 2) // Below this = DECLINE
   scanback_duration_mins Int?
 
@@ -251,8 +251,8 @@ model Job {
   lat     Decimal? @db.Decimal(10, 7) // Geocoded via Nominatim, cached
   lng     Decimal? @db.Decimal(10, 7)
 
-  // Scheduling — all times stored in UTC, displayed in user's local timezone
-  appointment_time      DateTime @db.Timestamptz // Hard constraint — anchored
+  // Scheduling: all times stored in UTC, displayed in user's local timezone
+  appointment_time      DateTime @db.Timestamptz // Hard constraint; anchored
   signing_duration_mins Int // From type defaults or per-job override
   scanback_duration_mins Int @default(0) // Per-job override or from type defaults
 
@@ -304,7 +304,7 @@ model Job {
   // Sequence in optimised route (updated by route engine)
   route_sequence Int? // 1-based position in day's optimised route
 
-  // Drive leg data (from origin to this job — stored after optimisation)
+  // Drive leg data (from origin to this job; stored after optimisation)
   drive_from_prev_mins  Int? // Drive time from previous job (or home base)
   drive_from_prev_miles Decimal? @db.Decimal(8, 2)
 
@@ -393,7 +393,7 @@ model Booking {
 
 // EMAIL IMPORT (Pro feature)
 
-// JOB IMPORT (Pro feature) — unified record for email & screenshot imports
+// JOB IMPORT (Pro feature): unified record for email & screenshot imports
 
 model JobImport {
   id          String @id @default(cuid())
@@ -404,7 +404,7 @@ model JobImport {
 
   // Raw email data from Resend inbound webhook (email imports only)
   resend_message_id String?  @unique
-  resend_email_id   String? // Resend API id — used to fetch the email body (webhook is metadata-only)
+  resend_email_id   String? // Resend API id; used to fetch the email body (webhook is metadata-only)
   from_address      String?
   recipient_address String? // The import address the email was sent to (import+username@...)
   subject           String?
@@ -462,7 +462,7 @@ model Invoice {
   travel_fee Decimal @default(0.00) @db.Decimal(8, 2)
   total      Decimal @db.Decimal(8, 2)
 
-  payment_method_used String? // e.g. "Zelle", "Venmo", "Check" — filled on mark-paid
+  payment_method_used String? // e.g. "Zelle", "Venmo", "Check"; filled on mark-paid
   pdf_url             String? // Cloudflare R2 URL of generated PDF
   note_to_client      String? // Editable note shown on the invoice before sending
 
@@ -540,7 +540,7 @@ model JournalEntry {
   entry_date       DateTime @db.Date
   act_type         String // "Acknowledgment", "Jurat", "Oath", etc.
   signing_type     String? // "LOAN_REFI", "GENERAL", etc.
-  act_time         String? // "14:00" — time of the notarial act
+  act_time         String? // "14:00"; time of the notarial act
   signer_name      String
   signer_id_type   String? // "Driver's License", "Passport"
   signer_id_number String? // Last 4 digits only for privacy
@@ -584,7 +584,7 @@ model CalendarConnection {
 // BILLING (Lemon Squeezy subscription lifecycle)
 
 model LemonSqueezyEvent {
-  id           String    @id // Lemon Squeezy event ID — prevents duplicate processing
+  id           String    @id // Lemon Squeezy event ID; prevents duplicate processing
   event_name   String // "subscription_created", "subscription_expired", etc.
   payload      Json // Full webhook payload
   processed    Boolean   @default(false)
@@ -679,7 +679,7 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-// GEOCODE CACHE (DB layer — Redis is primary, this is fallback + warm-up)
+// GEOCODE CACHE (DB layer; Redis is primary, this is fallback + warm-up)
 
 model GeocodeCache {
   id                 String  @id @default(cuid())

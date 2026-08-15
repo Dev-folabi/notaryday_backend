@@ -55,7 +55,7 @@ export class JobImportProcessor {
     });
 
     try {
-      // The Resend webhook is metadata-only — fetch the body when missing
+      // The Resend webhook is metadata-only; fetch the body when missing
       const rawText =
         record.raw_text || (await this.fetchEmailBody(record.resend_email_id));
       if (rawText && rawText !== record.raw_text) {

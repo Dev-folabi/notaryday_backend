@@ -43,7 +43,7 @@ export class CalendarSyncProcessor {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            summary: `${signingJob.signing_type.replace('_', ' ')} — $${signingJob.fee.toString()}`,
+            summary: `${signingJob.signing_type.replace('_', ' ')} · $${signingJob.fee.toString()}`,
             location: signingJob.address,
             start: { dateTime: signingJob.appointment_time.toISOString() },
             end: { dateTime: endTime.toISOString() },

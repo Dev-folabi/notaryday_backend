@@ -246,7 +246,7 @@ export class NotificationProcessor {
     });
 
     this.logger.log(
-      `Client ETA sent to ${nextJob.client_email} — ${etaMins} min`,
+      `Client ETA sent to ${nextJob.client_email} · ${etaMins} min`,
     );
   }
 

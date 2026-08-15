@@ -38,7 +38,7 @@ export class CalendarService {
     });
 
     const cal = ical({
-      name: `${user.full_name} — Notary Day`,
+      name: `${user.full_name} · Notary Day`,
       method: ICalCalendarMethod.PUBLISH,
     });
 
@@ -52,7 +52,7 @@ export class CalendarService {
       cal.createEvent({
         start: job.appointment_time,
         end: endTime,
-        summary: `${job.signing_type.replace('_', ' ')} — $${job.fee.toString()}`,
+        summary: `${job.signing_type.replace('_', ' ')} · $${job.fee.toString()}`,
         location: job.address,
         description: [
           job.client_name ? `Client: ${job.client_name}` : null,

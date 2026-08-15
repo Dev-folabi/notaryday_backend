@@ -49,7 +49,7 @@ export class NotificationsService {
 
     if (!emailValid) {
       this.logger.warn(
-        `RESEND_FROM_ADDRESS is not a valid email address ("${cleaned}") — falling back to "${fallback}"`,
+        `RESEND_FROM_ADDRESS is not a valid email address ("${cleaned}"); falling back to "${fallback}"`,
       );
       return fallback;
     }

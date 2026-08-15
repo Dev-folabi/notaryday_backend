@@ -155,7 +155,7 @@ export class CittService {
       originLat = Number(settings.home_base_lat);
       originLng = Number(settings.home_base_lng);
     } else {
-      // No origin available — can't compute drive time
+      // No origin available; can't compute drive time
       return this.decline(
         'No home base configured. Please set your home base in settings.',
         0,
@@ -165,7 +165,7 @@ export class CittService {
       );
     }
 
-    // Get drive time + distance from ORS (shared cache with jobs — same
+    // Get drive time + distance from ORS (shared cache with jobs, same
     // ors:lat,lng:lat,lng keys and 1h TTL)
     const route = await this.ors.getRoute(
       originLat,
@@ -175,7 +175,7 @@ export class CittService {
     );
     if (!route) {
       return this.decline(
-        'Drive time check unavailable — please try again shortly.',
+        'Drive time check unavailable. Please try again shortly.',
         0,
         0,
         dto.fee,

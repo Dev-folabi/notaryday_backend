@@ -149,7 +149,7 @@ export class BookingService {
       ? dto.base_fee!
       : (service?.base_fee ?? 75);
 
-    // Estimate travel fee (only when the client didn't quote a total — when
+    // Estimate travel fee (only when the client didn't quote a total; when
     // they did, that amount already covers the whole booking).
     let travelFee = 0;
     if (

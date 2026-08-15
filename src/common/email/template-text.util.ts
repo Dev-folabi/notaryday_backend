@@ -16,7 +16,7 @@ export function looksLikeHtml(text: string): boolean {
 }
 
 function renderParagraph(text: string, listVars: string[]): string {
-  // A paragraph that is only a list variable becomes a <ul> — the value
+  // A paragraph that is only a list variable becomes a <ul>; the value
   // (e.g. alternative_times) is injected as <li> items downstream.
   const bareMarker = text.match(/^\{\{([^{}]+)\}\}$/);
   if (bareMarker && listVars.includes(bareMarker[1])) {

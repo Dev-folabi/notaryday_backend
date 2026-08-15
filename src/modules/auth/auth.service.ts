@@ -43,7 +43,7 @@ export class AuthService {
     );
     if (existingUsername) {
       throw new ConflictException(
-        'That username is taken — try a different one',
+        'That username is taken. Try a different one',
       );
     }
 

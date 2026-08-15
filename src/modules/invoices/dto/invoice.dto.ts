@@ -37,7 +37,7 @@ export class UpdateInvoiceDto {
 
   @ApiPropertyOptional({
     example: '150',
-    description: 'Final fee amount — overrides the agreed job fee',
+    description: 'Final fee amount, overriding the agreed job fee',
   })
   @IsNumber()
   @Min(0)

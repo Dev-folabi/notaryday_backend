@@ -277,7 +277,7 @@ export class NotificationCronService {
       try {
         await this.notifications.sendPushToUser(user.id, {
           title: 'Your Pro trial ends in 3 days',
-          body: 'Your free Pro access expires soon — upgrade to keep the features.',
+          body: 'Your free Pro access expires soon. Upgrade to keep the features.',
           url: '/settings?tab=billing',
           tag: `trial-ending-${user.id}`,
         });

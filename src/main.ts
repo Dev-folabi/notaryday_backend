@@ -57,12 +57,12 @@ async function bootstrap() {
   const authGuard = new AuthGuard(reflector, authService);
   app.useGlobalGuards(authGuard);
 
-  // Swagger / OpenAPI — disabled in production
+  // Swagger / OpenAPI: disabled in production
   if (!isProduction) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('NotaryDay API')
       .setDescription(
-        'Backend API for NotaryDay — the mobile notary scheduling & profitability platform',
+        'Backend API for NotaryDay, the mobile notary scheduling & profitability platform',
       )
       .setVersion('1.0')
       .addBearerAuth()
@@ -92,7 +92,7 @@ async function bootstrap() {
           method.responses = method.responses ?? {};
           if (!method.responses['401']) {
             method.responses['401'] = {
-              description: 'Unauthorized — missing or invalid Bearer token',
+              description: 'Unauthorized: missing or invalid Bearer token',
             };
           }
         }
