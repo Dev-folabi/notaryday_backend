@@ -20,7 +20,16 @@ describe('PlannerService (gap finder)', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
-    dayPlan: { upsert: jest.fn() },
+    dayPlan: {
+      upsert: jest.fn() as jest.Mock<
+        Promise<Record<string, unknown>>,
+        [unknown]
+      >,
+      findUnique: jest.fn() as jest.Mock<
+        Promise<{ naive_total_drive_time: number | null } | null>,
+        [unknown]
+      >,
+    },
   };
   const redisMock = {
     del: jest.fn().mockResolvedValue(1),
@@ -116,6 +125,8 @@ describe('PlannerService (gap finder)', () => {
       total_drive_mins: 0,
       total_earnings: 0,
       total_miles: 0,
+      naive_total_drive_mins: null,
+      saved_drive_mins: null,
     },
     optimised: false,
     conflicts: [],
@@ -346,6 +357,7 @@ describe('PlannerService (gap finder)', () => {
       });
       prismaMock.job.update.mockResolvedValue({});
       prismaMock.dayPlan.upsert.mockResolvedValue({});
+      prismaMock.dayPlan.findUnique.mockResolvedValue(null);
     });
 
     it('falls back to time order when the ORS order is infeasible', async () => {
@@ -417,6 +429,13 @@ describe('PlannerService (gap finder)', () => {
       expect(orsMock.fallbackTimeOrder).not.toHaveBeenCalled();
       expect(seqFor('job-a')).toBe(1);
       expect(seqFor('job-b')).toBe(2);
+      // Optimised order == time order → naive total mirrors the route total.
+      const upsertArgs = prismaMock.dayPlan.upsert.mock.calls[0][0] as {
+        create: { naive_total_drive_time: number };
+        update: { naive_total_drive_time: number };
+      };
+      expect(upsertArgs.create.naive_total_drive_time).toBe(25);
+      expect(upsertArgs.update.naive_total_drive_time).toBe(25);
     });
 
     it('accounts for scanback when judging feasibility', async () => {
@@ -458,6 +477,34 @@ describe('PlannerService (gap finder)', () => {
       await service.optimise('user-1', '2026-08-05');
 
       expect(orsMock.fallbackTimeOrder).toHaveBeenCalled();
+    });
+  });
+
+  describe('getToday', () => {
+    it('reports saved drive minutes from the persisted DayPlan', async () => {
+      const jobA = rawJob('job-a', { startH: 9, startM: 0, drive: 12 });
+      const jobB = rawJob('job-b', { startH: 13, startM: 0, drive: 15 });
+      prismaMock.job.findMany.mockResolvedValue([jobA, jobB]);
+      prismaMock.dayPlan.findUnique.mockResolvedValue({
+        naive_total_drive_time: 40,
+      });
+
+      const result = await service.getToday('user-1', '2026-08-05');
+
+      expect(result.summary.total_drive_mins).toBe(27);
+      expect(result.summary.naive_total_drive_mins).toBe(40);
+      expect(result.summary.saved_drive_mins).toBe(13);
+    });
+
+    it('leaves saved drive minutes null when the route was never optimised', async () => {
+      const jobA = rawJob('job-a', { startH: 9, startM: 0, drive: 12 });
+      prismaMock.job.findMany.mockResolvedValue([jobA]);
+      prismaMock.dayPlan.findUnique.mockResolvedValue(null);
+
+      const result = await service.getToday('user-1', '2026-08-05');
+
+      expect(result.summary.saved_drive_mins).toBeNull();
+      expect(result.summary.naive_total_drive_mins).toBeNull();
     });
   });
 });

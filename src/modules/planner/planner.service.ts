@@ -60,6 +60,8 @@ export interface TodayPlanResult {
     total_drive_mins: number;
     total_earnings: number;
     total_miles: number;
+    naive_total_drive_mins: number | null;
+    saved_drive_mins: number | null;
   };
   optimised: boolean;
   conflicts: Conflict[];
@@ -195,7 +197,34 @@ export class PlannerService {
         (s, j) => s + (j.drive_from_prev_miles ?? 0),
         0,
       ),
+      naive_total_drive_mins: null as number | null,
+      saved_drive_mins: null as number | null,
     };
+
+    // Time-entry-order drive total is only meaningful once the route has been
+    // optimised; it's persisted on the DayPlan by POST /planner/optimise.
+    if (summary.total_drive_mins > 0) {
+      try {
+        const dayPlan = await this.prisma.dayPlan.findUnique({
+          where: { user_id_date: { user_id: userId, date: day } },
+          select: { naive_total_drive_time: true },
+        });
+        const naiveTotal = dayPlan?.naive_total_drive_time ?? null;
+        if (naiveTotal != null) {
+          summary.naive_total_drive_mins = naiveTotal;
+          summary.saved_drive_mins = Math.max(
+            0,
+            naiveTotal - summary.total_drive_mins,
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to read DayPlan naive drive time for ${date}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
 
     return {
       jobs: plannerJobs,
@@ -326,10 +355,18 @@ export class PlannerService {
         homeLng,
         orsJobs,
       );
-      return this.applyRoute(userId, day, date, jobs, fallback);
+      return this.applyRoute(
+        userId,
+        day,
+        date,
+        jobs,
+        fallback,
+        homeLat,
+        homeLng,
+      );
     }
 
-    return this.applyRoute(userId, day, date, jobs, legs);
+    return this.applyRoute(userId, day, date, jobs, legs, homeLat, homeLng);
   }
 
   /**
@@ -376,6 +413,8 @@ export class PlannerService {
     date: string,
     jobs: Job[],
     legs: OptimisedLeg[],
+    homeLat: number,
+    homeLng: number,
   ): Promise<TodayPlanResult> {
     // Update jobs with route data
     for (const leg of legs) {
@@ -403,15 +442,45 @@ export class PlannerService {
     const totalDrive = legs.reduce((s, l) => s + l.driveFromPrevMins, 0);
     const totalEarnings = jobs.reduce((s, j) => s + Number(j.net_earnings), 0);
 
+    // Naive (time-entry order) drive total — powers the "saved X min" figure.
+    // Only worth computing when the optimised order actually differs.
+    const timeOrderIds = [...jobs]
+      .sort(
+        (a, b) => a.appointment_time.getTime() - b.appointment_time.getTime(),
+      )
+      .map((j) => j.id);
+    const optimisedIds = legs.map((l) => l.jobId);
+    let naiveTotal = totalDrive;
+    if (optimisedIds.join('|') !== timeOrderIds.join('|')) {
+      const naiveLegs = await this.ors.fallbackTimeOrder(
+        homeLat,
+        homeLng,
+        jobs.map((j) => ({
+          id: j.id,
+          lat: Number(j.lat),
+          lng: Number(j.lng),
+          appointmentTime: j.appointment_time,
+          signingDurationMins: j.signing_duration_mins ?? 0,
+          scanbackDurationMins: j.scanback_duration_mins ?? 0,
+        })),
+      );
+      naiveTotal = naiveLegs.reduce((s, l) => s + l.driveFromPrevMins, 0);
+    }
+
     await this.prisma.dayPlan.upsert({
       where: { user_id_date: { user_id: userId, date: day } },
       create: {
         user_id: userId,
         date: day,
         total_drive_time: totalDrive,
+        naive_total_drive_time: naiveTotal,
         total_earnings: totalEarnings,
       },
-      update: { total_drive_time: totalDrive, total_earnings: totalEarnings },
+      update: {
+        total_drive_time: totalDrive,
+        naive_total_drive_time: naiveTotal,
+        total_earnings: totalEarnings,
+      },
     });
 
     // Cache invalidation + refresh
