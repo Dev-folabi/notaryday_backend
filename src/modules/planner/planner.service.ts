@@ -1,10 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { RedisService } from '../../config/redis.service';
-import { OrsService, OptimiseJob } from '../../common/services/ors.service';
+import {
+  OrsService,
+  OptimiseJob,
+  OptimisedLeg,
+} from '../../common/services/ors.service';
 import { UserSettingsService } from '../users/user-settings.service';
 // import { calculateProfitability } from '../../common/utils/profitability.util';
-import { JobStatus, SigningType } from '../../../generated/prisma';
+import { JobStatus, SigningType, Job } from '../../../generated/prisma';
 
 // const ROUTE_CACHE_TTL = 3600;
 // const SCANBACK_TYPES = new Set<SigningType>([
@@ -303,10 +307,76 @@ export class PlannerService {
       lat: Number(j.lat),
       lng: Number(j.lng),
       appointmentTime: j.appointment_time,
+      signingDurationMins: j.signing_duration_mins ?? 0,
+      scanbackDurationMins: j.scanback_duration_mins ?? 0,
     }));
 
     const legs = await this.ors.optimise(homeLat, homeLng, orsJobs);
 
+    // Guard against an optimised order that can't actually be reached on time.
+    // The solver optimises for drive time; if it returns a sequence where a
+    // job's appointment can't be met given the previous leg's drive + service
+    // time, fall back to plain time order so the day stays feasible.
+    if (!this.isFeasibleOrder(jobs, legs)) {
+      this.logger.warn(
+        'ORS optimised order violates appointment feasibility, using time order',
+      );
+      const fallback = await this.ors.fallbackTimeOrder(
+        homeLat,
+        homeLng,
+        orsJobs,
+      );
+      return this.applyRoute(userId, day, date, jobs, fallback);
+    }
+
+    return this.applyRoute(userId, day, date, jobs, legs);
+  }
+
+  /**
+   * True when every leg in the sequence is reachable before its appointment:
+   * previous job end (appointment + signing + scanback) + drive time must not
+   * overshoot the next job's appointment window (+10 min tolerance).
+   */
+  private isFeasibleOrder(jobs: Job[], legs: OptimisedLeg[]): boolean {
+    if (legs.length < 2) return true;
+
+    const byId = new Map(jobs.map((j) => [j.id, j]));
+
+    for (let i = 1; i < legs.length; i++) {
+      const prevLeg = legs[i - 1];
+      const leg = legs[i];
+
+      const prevJob = byId.get(prevLeg.jobId);
+      const job = byId.get(leg.jobId);
+      if (!prevJob || !job) continue;
+
+      const prevServiceMins =
+        (prevJob.signing_duration_mins ?? 0) +
+        (prevJob.scanback_duration_mins ?? 0);
+      const prevEnds = new Date(
+        prevJob.appointment_time.getTime() + prevServiceMins * 60_000,
+      );
+      // Each leg's drive time is measured from the previous stop to this job.
+      const driveMins = leg.driveFromPrevMins ?? 0;
+      const arrival = new Date(prevEnds.getTime() + driveMins * 60_000);
+
+      // Appointments are anchored to ±10 min; allow the same tolerance.
+      const appointment = job.appointment_time.getTime();
+      if (arrival.getTime() > appointment + 10 * 60_000) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Persist a route (legs) onto jobs, update DayPlan, invalidate the cache. */
+  private async applyRoute(
+    userId: string,
+    day: Date,
+    date: string,
+    jobs: Job[],
+    legs: OptimisedLeg[],
+  ): Promise<TodayPlanResult> {
     // Update jobs with route data
     for (const leg of legs) {
       const job = jobs.find((j) => j.id === leg.jobId);
@@ -358,9 +428,18 @@ export class PlannerService {
     const settings = await this.userSettings.get(userId);
     const irsRate = Number(settings.irs_rate_per_mile ?? 0.72);
 
-    // Get pending jobs for this user (any date)
+    // Get pending jobs for this user, scoped to the queried day so a gap only
+    // surfaces candidates the notary could actually do today.
+    const day = new Date(date);
+    const next = new Date(day);
+    next.setDate(next.getDate() + 1);
     const pendingJobs = await this.prisma.job.findMany({
-      where: { user_id: userId, deleted_at: null, status: JobStatus.PENDING },
+      where: {
+        user_id: userId,
+        deleted_at: null,
+        status: JobStatus.PENDING,
+        appointment_time: { gte: day, lt: next },
+      },
       orderBy: { fee: 'desc' },
       take: 50,
     });

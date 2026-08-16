@@ -9,7 +9,11 @@ import { JobStatus, SigningType } from '../../../generated/prisma';
 describe('PlannerService (gap finder)', () => {
   let service: PlannerService;
 
-  const orsMock = { getRoute: jest.fn(), optimise: jest.fn() };
+  const orsMock = {
+    getRoute: jest.fn(),
+    optimise: jest.fn(),
+    fallbackTimeOrder: jest.fn(),
+  };
   const prismaMock = {
     job: {
       findMany: jest.fn(),
@@ -73,6 +77,34 @@ describe('PlannerService (gap finder)', () => {
       client_name: null,
       platform_name: 'Snapdocs',
       ...overrides,
+    };
+  }
+
+  /** Raw prisma.job row shape used by optimise()/getToday(). */
+  function rawJob(
+    id: string,
+    opts: { startH: number; startM: number; scanback?: number; drive?: number },
+  ) {
+    const duration = 45;
+    return {
+      id,
+      address: `${id} address`,
+      lat: 33.74,
+      lng: -84.39,
+      appointment_time: at(opts.startH, opts.startM),
+      signing_duration_mins: duration,
+      scanback_duration_mins: opts.scanback ?? 0,
+      signing_type: SigningType.GENERAL,
+      fee: 125,
+      platform_fee: 0,
+      net_earnings: 110,
+      status: JobStatus.CONFIRMED,
+      client_name: null,
+      route_sequence: null,
+      drive_from_prev_mins: opts.drive ?? null,
+      drive_from_prev_miles: null,
+      signing_ends_at: at(opts.startH, opts.startM + duration),
+      scanback_ends_at: null,
     };
   }
 
@@ -266,6 +298,166 @@ describe('PlannerService (gap finder)', () => {
       const gaps = await service.findGaps('user-1', today);
 
       expect(gaps[0].candidates).toHaveLength(3);
+    });
+
+    it('only considers pending jobs on the queried date', async () => {
+      jest.spyOn(service, 'getToday').mockResolvedValue(dayPlan);
+      prismaMock.job.findMany.mockResolvedValue([pendingJob('pending-1')]);
+      orsMock.getRoute.mockResolvedValue({
+        distanceMiles: 2,
+        driveTimeMins: 6,
+      });
+
+      await service.findGaps('user-1', today);
+
+      const [firstCall] = (
+        prismaMock.job.findMany.mock.calls as Array<
+          [{ where: { appointment_time: { gte: Date; lt: Date } } }]
+        >
+      )[0];
+      const where = firstCall.where;
+      expect(where.appointment_time.gte.toISOString()).toBe(
+        '2026-08-05T00:00:00.000Z',
+      );
+      expect(where.appointment_time.lt.toISOString()).toBe(
+        '2026-08-06T00:00:00.000Z',
+      );
+    });
+  });
+
+  describe('optimise', () => {
+    type UpdateArgs = {
+      where: { id: string };
+      data: { route_sequence: number | null };
+    };
+    const updateCalls = () =>
+      prismaMock.job.update.mock.calls as UpdateArgs[][];
+
+    const seqFor = (jobId: string): number | null | undefined => {
+      const call = updateCalls().find((c) => c[0].where.id === jobId);
+      return call ? call[0].data.route_sequence : undefined;
+    };
+
+    beforeEach(() => {
+      userSettingsMock.get.mockResolvedValue({
+        irs_rate_per_mile: 0.72,
+        home_base_lat: 33.7,
+        home_base_lng: -84.4,
+      });
+      prismaMock.job.update.mockResolvedValue({});
+      prismaMock.dayPlan.upsert.mockResolvedValue({});
+    });
+
+    it('falls back to time order when the ORS order is infeasible', async () => {
+      const jobA = rawJob('job-a', { startH: 9, startM: 0 });
+      const jobB = rawJob('job-b', { startH: 13, startM: 0 });
+      prismaMock.job.findMany.mockResolvedValue([jobA, jobB]);
+
+      // job-b (13:00) first, then job-a (09:00) 240 min later -> cannot be
+      // reached within job-a's window, so the order must be rejected.
+      orsMock.optimise.mockResolvedValue([
+        {
+          jobId: 'job-b',
+          sequence: 1,
+          driveFromPrevMins: 10,
+          driveFromPrevMiles: 3,
+        },
+        {
+          jobId: 'job-a',
+          sequence: 2,
+          driveFromPrevMins: 240,
+          driveFromPrevMiles: 40,
+        },
+      ]);
+      orsMock.fallbackTimeOrder.mockResolvedValue([
+        {
+          jobId: 'job-a',
+          sequence: 1,
+          driveFromPrevMins: 12,
+          driveFromPrevMiles: 5,
+        },
+        {
+          jobId: 'job-b',
+          sequence: 2,
+          driveFromPrevMins: 16,
+          driveFromPrevMiles: 7,
+        },
+      ]);
+
+      await service.optimise('user-1', '2026-08-05');
+
+      expect(orsMock.fallbackTimeOrder).toHaveBeenCalled();
+      expect(seqFor('job-a')).toBe(1);
+      expect(seqFor('job-b')).toBe(2);
+    });
+
+    it('keeps a feasible ORS order', async () => {
+      const jobA = rawJob('job-a', { startH: 9, startM: 0 });
+      const jobB = rawJob('job-b', { startH: 13, startM: 0 });
+      prismaMock.job.findMany.mockResolvedValue([jobA, jobB]);
+
+      // 09:45 end + 15 min drive -> 10:00 arrival, inside job-b's window.
+      orsMock.optimise.mockResolvedValue([
+        {
+          jobId: 'job-a',
+          sequence: 1,
+          driveFromPrevMins: 10,
+          driveFromPrevMiles: 3,
+        },
+        {
+          jobId: 'job-b',
+          sequence: 2,
+          driveFromPrevMins: 15,
+          driveFromPrevMiles: 6,
+        },
+      ]);
+
+      await service.optimise('user-1', '2026-08-05');
+
+      expect(orsMock.fallbackTimeOrder).not.toHaveBeenCalled();
+      expect(seqFor('job-a')).toBe(1);
+      expect(seqFor('job-b')).toBe(2);
+    });
+
+    it('accounts for scanback when judging feasibility', async () => {
+      const jobA = rawJob('job-a', { startH: 9, startM: 0, scanback: 30 });
+      const jobB = rawJob('job-b', { startH: 13, startM: 0 });
+      prismaMock.job.findMany.mockResolvedValue([jobA, jobB]);
+
+      // 09:45 signing end + 30 min scanback + 240 min drive -> 14:15 arrival,
+      // far past job-b's 13:00 window.
+      orsMock.optimise.mockResolvedValue([
+        {
+          jobId: 'job-a',
+          sequence: 1,
+          driveFromPrevMins: 10,
+          driveFromPrevMiles: 3,
+        },
+        {
+          jobId: 'job-b',
+          sequence: 2,
+          driveFromPrevMins: 240,
+          driveFromPrevMiles: 40,
+        },
+      ]);
+      orsMock.fallbackTimeOrder.mockResolvedValue([
+        {
+          jobId: 'job-a',
+          sequence: 1,
+          driveFromPrevMins: 12,
+          driveFromPrevMiles: 5,
+        },
+        {
+          jobId: 'job-b',
+          sequence: 2,
+          driveFromPrevMins: 16,
+          driveFromPrevMiles: 7,
+        },
+      ]);
+
+      await service.optimise('user-1', '2026-08-05');
+
+      expect(orsMock.fallbackTimeOrder).toHaveBeenCalled();
     });
   });
 });

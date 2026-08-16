@@ -21,6 +21,14 @@ interface OrsOptimizationJob {
   time_windows?: [number, number][];
 }
 
+interface OrsOptimizationVehicle {
+  id: number;
+  profile: string;
+  start: [number, number];
+  end: [number, number];
+  time_window?: [number, number];
+}
+
 interface OrsOptimizationStep {
   type: string;
   id: number;
@@ -42,6 +50,8 @@ export interface OptimiseJob {
   lat: number;
   lng: number;
   appointmentTime?: Date; // anchored time constraint
+  signingDurationMins?: number; // time spent at the stop
+  scanbackDurationMins?: number; // additional scanback time at the stop
 }
 
 export interface OptimisedLeg {
@@ -157,7 +167,7 @@ export class OrsService {
 
     try {
       // Build ORS optimization request
-      const vehicles = [
+      const vehicles: OrsOptimizationVehicle[] = [
         {
           id: 1,
           profile: 'driving-car',
@@ -170,7 +180,11 @@ export class OrsService {
         const job: OrsOptimizationJob = {
           id: i + 1,
           location: [j.lng, j.lat],
-          service: 0,
+          // Account for the actual time spent at each stop so the solver can't
+          // schedule two jobs back-to-back when signing + scanback + drive
+          // won't actually fit.
+          service:
+            ((j.signingDurationMins ?? 0) + (j.scanbackDurationMins ?? 0)) * 60,
         };
         // Anchor jobs with fixed appointment times as time windows
         if (j.appointmentTime) {
@@ -179,6 +193,19 @@ export class OrsService {
         }
         return job;
       });
+
+      // Bound the whole day so the solver stays on the day's planning horizon
+      // instead of starting at "now" or epoch.
+      const datedJobs = jobs.filter((j) => j.appointmentTime != null);
+      if (datedJobs.length === jobs.length && datedJobs.length > 0) {
+        const starts = datedJobs.map((j) =>
+          Math.floor(j.appointmentTime!.getTime() / 1000),
+        );
+        vehicles[0].time_window = [
+          Math.min(...starts) - 1800, // 30 min slack before the first job
+          Math.max(...starts) + 6 * 3600, // through the last job + 6h
+        ];
+      }
 
       const res = await axios.post<OrsOptimizationResponse>(
         `${this.baseUrl}/optimization`,
@@ -251,7 +278,11 @@ export class OrsService {
     }
   }
 
-  private async fallbackTimeOrder(
+  /**
+   * Time-ordered fallback used when ORS optimisation fails or returns an
+   * infeasible sequence. Public so callers can re-apply it after validation.
+   */
+  async fallbackTimeOrder(
     startLat: number,
     startLng: number,
     jobs: OptimiseJob[],
