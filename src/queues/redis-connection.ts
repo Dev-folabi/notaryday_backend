@@ -25,5 +25,10 @@ export const bullRedisConnection = (
       connectTimeout: 5000,
       keepAlive: 5000,
     } as BullRootModuleOptions['redis'],
+    settings: {
+      drainDelay: 60,
+      guardInterval: 300,
+      stalledInterval: 600,
+    },
   };
 };

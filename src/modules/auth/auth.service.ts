@@ -14,6 +14,9 @@ import { RedisService } from '../../config/redis.service';
 
 @Injectable()
 export class AuthService {
+  private readonly blacklistCache = new Map<string, boolean>();
+  private static readonly BLACKLIST_CACHE_TTL_MS = 60_000;
+
   constructor(
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
@@ -151,12 +154,23 @@ export class AuthService {
     const remainingTime = decoded.exp - Math.floor(Date.now() / 1000);
     if (remainingTime > 0) {
       await this.redisService.set(`blacklist:${token}`, 'true', remainingTime);
+      this.blacklistCache.delete(token);
     }
   }
 
   async isTokenBlacklisted(token: string): Promise<boolean> {
+    if (this.blacklistCache.has(token)) {
+      return this.blacklistCache.get(token)!;
+    }
+
     const blacklisted = await this.redisService.get(`blacklist:${token}`);
-    return !!blacklisted;
+    const result = !!blacklisted;
+    this.blacklistCache.set(token, result);
+    setTimeout(
+      () => this.blacklistCache.delete(token),
+      AuthService.BLACKLIST_CACHE_TTL_MS,
+    ).unref();
+    return result;
   }
 
   async getMeFromToken(token: string) {
