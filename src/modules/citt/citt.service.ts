@@ -9,6 +9,7 @@ import { OrsService } from '../../common/services/ors.service';
 import { calculateProfitability } from '../../common/utils/profitability.util';
 import { CittCheckDto } from './dto/citt-check.dto';
 import { JobStatus, SigningType } from '../../../generated/prisma';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 /** CITT verdict thresholds */
 const MIN_GAP_MINS = 10;
@@ -56,6 +57,7 @@ export class CittService {
     private readonly userSettings: UserSettingsService,
     private readonly jobsService: JobsService,
     private readonly ors: OrsService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   async runCheck(userId: string, dto: CittCheckDto): Promise<CittResult> {
@@ -301,6 +303,7 @@ export class CittService {
     };
 
     await this.cacheResult(cacheKey, result);
+    this.analytics.track('citt_checked', userId, { verdict: result.verdict });
     return result;
   }
 

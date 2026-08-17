@@ -11,6 +11,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailTemplatesService } from '../email-templates/email-templates.service';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { CreateBookingDto, DeclineBookingDto } from './dto/booking.dto';
 import {
   BookingStatus,
@@ -101,6 +102,7 @@ export class BookingService {
     private readonly notifications: NotificationsService,
     private readonly emailTemplates: EmailTemplatesService,
     private readonly emailRenderer: EmailRendererService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   /** Public: create a booking request */
@@ -250,6 +252,11 @@ export class BookingService {
         tag: `booking-${booking.id}`,
       });
     }
+
+    this.analytics.track('booking_requested', notary.id, {
+      service_type: booking.service_type,
+      status: booking.status,
+    });
 
     return booking;
   }
@@ -442,6 +449,10 @@ export class BookingService {
         tag: `booking-confirmed-${booking.id}`,
       });
     }
+
+    this.analytics.track('booking_approved', notaryId, {
+      service_type: booking.service_type,
+    });
 
     return { booking: { ...booking, status: BookingStatus.CONFIRMED }, job };
   }

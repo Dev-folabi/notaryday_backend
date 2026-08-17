@@ -12,6 +12,7 @@ import { Prisma } from '../../generated/prisma';
 import { getLocalEmailAssets } from '../common/email/email-assets';
 import { EmailRendererService } from '../common/email/email-renderer.service';
 import { EmailTemplatesService } from '../modules/email-templates/email-templates.service';
+import { AnalyticsService } from '../modules/analytics/analytics.service';
 
 function fmtInTz(
   date: Date,
@@ -64,6 +65,7 @@ export class InvoiceProcessor {
     private readonly emailRenderer: EmailRendererService,
     private readonly emailTemplates: EmailTemplatesService,
     private readonly config: ConfigService,
+    private readonly analytics: AnalyticsService,
   ) {
     const r2 = this.config.get<{
       accountId: string;
@@ -630,6 +632,11 @@ export class InvoiceProcessor {
       this.logger.log(
         `Invoice ${invoice.invoice_number} emailed to ${invoice.recipient_email}`,
       );
+      this.analytics.track('invoice_sent', invoice.user_id, {
+        invoice_number: invoice.invoice_number.toString(),
+        total: Number(invoice.total),
+        attempt,
+      });
       await this.prisma.invoice.update({
         where: { id: invoiceId },
         data: {

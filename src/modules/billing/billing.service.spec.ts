@@ -11,6 +11,7 @@ describe('BillingService', () => {
     prisma as never,
     {} as never,
     {} as never,
+    { track: jest.fn() } as never,
   );
 
   beforeEach(() => jest.clearAllMocks());

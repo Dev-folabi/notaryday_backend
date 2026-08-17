@@ -8,6 +8,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailTemplatesService } from '../email-templates/email-templates.service';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import {
   BookingStatus,
   JobSource,
@@ -194,6 +195,7 @@ describe('BookingService', () => {
             detailBlock: jest.fn().mockReturnValue('<div>details</div>'),
           },
         },
+        { provide: AnalyticsService, useValue: { track: jest.fn() } },
       ],
     }).compile();
 

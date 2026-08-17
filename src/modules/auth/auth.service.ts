@@ -11,6 +11,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JwtService } from '@nestjs/jwt';
 import { RedisService } from '../../config/redis.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class AuthService {
@@ -26,6 +27,7 @@ export class AuthService {
     private readonly notificationsService: NotificationsService,
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   async register(data: {
@@ -73,6 +75,11 @@ export class AuthService {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
+
+    this.analytics.track('user_registered', user.id, {
+      plan: user.plan,
+      trial: user.plan_expires_at ? true : false,
+    });
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email });
     return { user: rest, token };

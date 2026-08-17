@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { JournalService } from '../journal/journal.service';
 import { OrsService } from '../../common/services/ors.service';
 import { InvoicesService } from '../invoices/invoices.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import {
   QUEUE_CALENDAR_SYNC,
   QUEUE_NOTIFICATION,
@@ -79,6 +80,7 @@ describe('JobsService', () => {
           provide: getQueueToken(QUEUE_NOTIFICATION),
           useValue: notificationQueueMock,
         },
+        { provide: AnalyticsService, useValue: { track: jest.fn() } },
       ],
     }).compile();
 

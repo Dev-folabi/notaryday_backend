@@ -14,6 +14,7 @@ describe('AuthService', () => {
     {} as never,
     jwt as never,
     {} as never,
+    { track: jest.fn() } as never,
   );
 
   beforeEach(() => jest.clearAllMocks());

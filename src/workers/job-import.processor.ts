@@ -11,6 +11,7 @@ import { ImportStatus, SigningType } from '../../generated/prisma';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { UserSettingsService } from '../modules/users/user-settings.service';
 import { EmailRendererService } from '../common/email/email-renderer.service';
+import { AnalyticsService } from '../modules/analytics/analytics.service';
 
 const PARSE_EMAIL = 'parse-email';
 const PARSE_SCREENSHOT = 'parse-screenshot';
@@ -39,6 +40,7 @@ export class JobImportProcessor {
     private readonly notifications: NotificationsService,
     private readonly userSettings: UserSettingsService,
     private readonly emailRenderer: EmailRendererService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   @Process(PARSE_EMAIL)
@@ -284,6 +286,10 @@ export class JobImportProcessor {
     }
 
     this.logger.log(`Job import ${importId} parsed successfully (${channel})`);
+    this.analytics.track('job_import_completed', userId, {
+      channel,
+      model,
+    });
   }
   /** Mark an import FAILED and log the error */
   private async handleError(importId: string, error: unknown) {

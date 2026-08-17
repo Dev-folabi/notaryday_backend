@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Prisma } from '../../../generated/prisma/client';
+import * as Sentry from '@sentry/nestjs';
 
 interface ErrorResponse {
   code: string;
@@ -107,6 +108,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
     };
+
+    // Send server-side failures (5xx and unknown exceptions) to Sentry.
+    // Client errors (4xx) are expected behavior and are not captured.
+    if (status >= 500 && Sentry.getClient()) {
+      Sentry.captureException(exception, {
+        extra: { path: request.url, method: request.method, code },
+      });
+    }
 
     response.status(status).json({
       success: false,

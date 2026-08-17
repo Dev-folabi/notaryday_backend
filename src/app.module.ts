@@ -16,6 +16,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { BotBlockMiddleware } from './common/middleware/bot-block.middleware';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { CittModule } from './modules/citt/citt.module';
@@ -29,6 +30,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { JournalModule } from './modules/journal/journal.module';
 import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -64,6 +66,7 @@ import { EmailTemplatesModule } from './modules/email-templates/email-templates.
     RedisModule,
     PrismaModule,
     QueueModule,
+    AnalyticsModule,
 
     // Domain modules
     AuthModule,
@@ -90,6 +93,10 @@ import { EmailTemplatesModule } from './modules/email-templates/email-templates.
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer
+      .apply(BotBlockMiddleware)
+      .forRoutes('*')
+      .apply(LoggerMiddleware)
+      .forRoutes('*');
   }
 }

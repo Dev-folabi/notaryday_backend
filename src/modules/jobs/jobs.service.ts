@@ -29,6 +29,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { JournalService } from '../journal/journal.service';
 import { InvoicesService } from '../invoices/invoices.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 // Signing types that mandate scanback
 const SCANBACK_TYPES = new Set<SigningType>([
@@ -66,6 +67,7 @@ export class JobsService {
     private readonly journal: JournalService,
     private readonly ors: OrsService,
     private readonly invoices: InvoicesService,
+    private readonly analytics: AnalyticsService,
     @InjectQueue(QUEUE_CALENDAR_SYNC)
     private readonly calendarSyncQueue: Queue,
     @InjectQueue(QUEUE_NOTIFICATION)
@@ -199,6 +201,12 @@ export class JobsService {
     }
 
     await this.invalidateRouteCache(userId, appointmentTime);
+
+    this.analytics.track('job_created', userId, {
+      source: job.source,
+      signing_type: job.signing_type,
+      status: job.status,
+    });
 
     if (job.status === JobStatus.CONFIRMED) {
       try {
@@ -524,6 +532,10 @@ export class JobsService {
     }
 
     if (newStatus === JobStatus.COMPLETE) {
+      this.analytics.track('job_completed', userId, {
+        signing_type: job.signing_type,
+        net_earnings: Number(updated.net_earnings ?? 0),
+      });
       try {
         await this.invoices.generate(userId, job.id);
       } catch (err) {

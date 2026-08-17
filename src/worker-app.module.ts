@@ -9,6 +9,7 @@ import { QueueModule } from './queues/queue.module';
 import { bullRedisConnection } from './queues/redis-connection';
 import { WorkersModule } from './workers/workers.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AuthModule } from './modules/auth/auth.module';
     PrismaModule,
     QueueModule,
     AuthModule,
+    AnalyticsModule,
     WorkersModule,
   ],
 })

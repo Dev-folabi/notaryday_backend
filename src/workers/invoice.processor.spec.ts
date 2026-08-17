@@ -17,6 +17,7 @@ describe('InvoiceProcessor email attempts', () => {
   const renderer = { render: jest.fn(), detailBlock: jest.fn() };
   const templates = { findByType: jest.fn(), render: jest.fn() };
   const config = { get: jest.fn().mockReturnValue({}) };
+  const analytics = { track: jest.fn() };
   const service = new InvoiceProcessor(
     prisma as never,
     notifications as never,
@@ -24,6 +25,7 @@ describe('InvoiceProcessor email attempts', () => {
     renderer as never,
     templates as never,
     config as never,
+    analytics as never,
   );
   const invoice = {
     id: 'inv-1',

@@ -1,3 +1,5 @@
+import 'dotenv/config';
+import './instrument';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -9,7 +11,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { AuthGuard } from './common/guards/auth.guard';
 import { AuthService } from './modules/auth/auth.service';
-import 'dotenv/config';
+import { Sentry } from './instrument';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -86,12 +88,25 @@ async function bootstrap() {
     const document = SwaggerModule.createDocument(app, swaggerConfig);
 
     // Add global 401 response to all endpoints that use BearerAuth
-    for (const path of Object.values(document.paths ?? {})) {
-      for (const method of Object.values(path as Record<string, any>)) {
-        if (method.security?.some((s: any) => s.bearer)) {
-          method.responses = method.responses ?? {};
-          if (!method.responses['401']) {
-            method.responses['401'] = {
+    const swaggerPaths = document.paths ?? {};
+    for (const pathItem of Object.values(swaggerPaths)) {
+      if (!pathItem) continue;
+      for (const method of Object.values(pathItem)) {
+        if (
+          typeof method !== 'object' ||
+          method === null ||
+          Array.isArray(method)
+        ) {
+          continue;
+        }
+        const operation = method as {
+          security?: Array<Record<string, string[]>>;
+          responses?: Record<string, unknown>;
+        };
+        if (operation.security?.some((s) => s.bearer)) {
+          operation.responses = operation.responses ?? {};
+          if (!operation.responses['401']) {
+            operation.responses['401'] = {
               description: 'Unauthorized: missing or invalid Bearer token',
             };
           }
@@ -116,7 +131,18 @@ async function bootstrap() {
   );
 }
 
-bootstrap().catch((err) => {
+async function shutdown(signal: string) {
+  new Logger('Bootstrap').log(`Received ${signal}, shutting down...`);
+  await Sentry.close(2000);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+
+bootstrap().catch(async (err) => {
+  Sentry.captureException(err);
+  await Sentry.close(2000);
   console.error(err);
   process.exit(1);
 });
