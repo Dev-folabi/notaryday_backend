@@ -2,7 +2,6 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bull';
 import { AppConfigModule } from './config/config.module';
 import { RedisModule } from './config/redis.module';
@@ -30,7 +29,6 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { JournalModule } from './modules/journal/journal.module';
 import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
-import { WorkersModule } from './workers/workers.module';
 
 @Module({
   imports: [
@@ -47,9 +45,6 @@ import { WorkersModule } from './workers/workers.module';
         },
       ],
     }),
-
-    // Scheduling
-    ScheduleModule.forRoot(),
 
     // BullMQ (Redis connection parsed from UPSTASH_REDIS_URL)
     BullModule.forRootAsync({
@@ -89,7 +84,6 @@ import { WorkersModule } from './workers/workers.module';
     ReportsModule,
     JournalModule,
     EmailTemplatesModule,
-    WorkersModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { InvoicesService } from './invoices.service';
@@ -18,6 +19,7 @@ describe('InvoicesService', () => {
     };
   };
   let enqueue: jest.SpyInstance;
+  let invoiceQueue: { add: jest.Mock; getJob: jest.Mock };
 
   const baseInvoice = {
     id: 'inv-1',
@@ -43,13 +45,17 @@ describe('InvoicesService', () => {
       },
     };
 
+    invoiceQueue = {
+      add: jest.fn(),
+      getJob: jest.fn().mockResolvedValue(null),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InvoicesService,
         { provide: PrismaService, useValue: prisma },
         { provide: UserSettingsService, useValue: {} },
         { provide: NotificationsService, useValue: {} },
-        { provide: 'BullQueue_invoice', useValue: { add: jest.fn() } },
+        { provide: 'BullQueue_invoice', useValue: invoiceQueue },
       ],
     }).compile();
 
@@ -79,7 +85,6 @@ describe('InvoicesService', () => {
 
       expect(prisma.invoice.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             recipient_name: 'New Client',
             subtotal: 150,
@@ -144,7 +149,6 @@ describe('InvoicesService', () => {
       expect(prisma.job.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'j1' },
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             fee: 200,
             net_earnings: 154.8,
@@ -187,7 +191,6 @@ describe('InvoicesService', () => {
 
       expect(prisma.invoice.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             subtotal: 150,
             travel_fee: 20,
@@ -212,7 +215,6 @@ describe('InvoicesService', () => {
 
       expect(prisma.invoice.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             subtotal: 200,
             travel_fee: 0,
@@ -245,7 +247,6 @@ describe('InvoicesService', () => {
 
       expect(prisma.invoice.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             recipient_name: 'Updated Client Name',
             recipient_email: 'newclient@example.com',
@@ -266,5 +267,31 @@ describe('InvoicesService', () => {
 
       expect(prisma.invoice.update).not.toHaveBeenCalled();
     });
+  });
+
+  it('resets email delivery state and queues deterministic attempt one', async () => {
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      ...baseInvoice,
+      recipient_email: 'client@example.com',
+      email_attempts: 3,
+    } as never);
+
+    await service.send('u1', 'inv-1');
+
+    expect(prisma.invoice.update).toHaveBeenCalledWith({
+      where: { id: 'inv-1' },
+      data: expect.objectContaining({
+        email_pending: true,
+        email_attempts: 0,
+        email_last_attempt_at: null,
+        email_last_error: null,
+        email_failed_at: null,
+      }),
+    });
+    expect(enqueue).toHaveBeenCalledWith(
+      'send-email',
+      { invoiceId: 'inv-1', userId: 'u1', attempt: 1 },
+      expect.objectContaining({ jobId: 'invoice-email-inv-1-1', attempts: 1 }),
+    );
   });
 });

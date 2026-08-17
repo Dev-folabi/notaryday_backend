@@ -470,6 +470,10 @@ model Invoice {
 
   pdf_pending   Boolean @default(false)
   email_pending Boolean @default(false)
+  email_attempts        Int       @default(0)
+  email_last_attempt_at DateTime? @db.Timestamptz
+  email_last_error      String?   @db.Text
+  email_failed_at       DateTime? @db.Timestamptz
 
   // Status
   sent_at DateTime? @db.Timestamptz
@@ -484,6 +488,7 @@ model Invoice {
   deleted_at DateTime? @db.Timestamptz
 
   @@index([user_id, created_at])
+  @@index([email_pending, email_attempts])
   @@map("invoices")
 }
 

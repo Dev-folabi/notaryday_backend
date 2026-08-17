@@ -155,8 +155,8 @@ describe('PlannerService (gap finder)', () => {
 
   describe('findGaps', () => {
     // Job A ends 09:45 (no scanback) → gap starts 09:55.
-    // Job B starts 13:00, drive_from_prev 15 min → gap ends 12:35.
-    // Window = 160 min.
+    // Job B starts 13:00 → gap ends 12:50 after the end buffer.
+    // Window = 175 min.
     const today = '2026-08-05';
     const dayPlan = plan([
       plannerJob('job-a', { startH: 9, startM: 0, endH: 9, endM: 45 }),
@@ -205,10 +205,9 @@ describe('PlannerService (gap finder)', () => {
     it('returns a gap with context labels and a ranked candidate', async () => {
       jest.spyOn(service, 'getToday').mockResolvedValue(dayPlan);
       prismaMock.job.findMany.mockResolvedValue([pendingJob('pending-1')]);
-      orsMock.getRoute.mockResolvedValue({
-        distanceMiles: 5,
-        driveTimeMins: 10,
-      });
+      orsMock.getRoute
+        .mockResolvedValueOnce({ distanceMiles: 5, driveTimeMins: 10 })
+        .mockResolvedValueOnce({ distanceMiles: 3, driveTimeMins: 8 });
 
       const gaps = await service.findGaps('user-1', today);
 
@@ -218,15 +217,15 @@ describe('PlannerService (gap finder)', () => {
       expect(gap.next_job_label).toBe('Job 2');
       expect(gap.prev_job_id).toBe('job-a');
       expect(gap.next_job_id).toBe('job-b');
-      expect(gap.gap_mins).toBe(160);
+      expect(gap.gap_mins).toBe(175);
       expect(gap.candidates).toHaveLength(1);
       expect(gap.candidates[0].id).toBe('pending-1');
-      expect(gap.candidates[0].miles_from).toBe(5);
+      expect(gap.candidates[0].miles_from).toBe(8);
       expect(gap.candidates[0].miles_from_label).toBe('Job 1');
       expect(gap.candidates[0].signing_duration_mins).toBe(45);
       expect(gap.candidates[0].platform_name).toBe('Snapdocs');
-      // net = 150 - (5 * 2 * 0.72) - 0 = 142.80
-      expect(gap.candidates[0].net_earnings).toBe(142.8);
+      // net = 150 - ((5 + 3) * 2 * 0.72) - 0 = 138.48
+      expect(gap.candidates[0].net_earnings).toBe(138.48);
     });
 
     it('ranks candidates by estimated net after gap-leg mileage', async () => {
@@ -237,23 +236,17 @@ describe('PlannerService (gap finder)', () => {
       ]);
       // far: 20 mi drive → net = 200 - 28.8 = 171.2
       // near: 2 mi drive → net = 150 - 2.88 = 147.12
-      orsMock.getRoute.mockImplementation(
-        (fromLat: number, fromLng: number, toLat: number, toLng: number) => {
-          const fromKey = `${fromLat},${fromLng}`;
-          if (fromKey === '33.74,-84.39') {
-            return { distanceMiles: 20, driveTimeMins: 25 };
-          }
-          void toLat;
-          void toLng;
-          return { distanceMiles: 2, driveTimeMins: 6 };
-        },
-      );
+      orsMock.getRoute
+        .mockResolvedValueOnce({ distanceMiles: 20, driveTimeMins: 25 })
+        .mockResolvedValueOnce({ distanceMiles: 2, driveTimeMins: 6 })
+        .mockResolvedValueOnce({ distanceMiles: 2, driveTimeMins: 6 })
+        .mockResolvedValueOnce({ distanceMiles: 2, driveTimeMins: 6 });
 
       const gaps = await service.findGaps('user-1', today);
       const ids = gaps[0].candidates.map((c) => c.id);
 
       expect(ids).toEqual(['far', 'near']);
-      expect(gaps[0].candidates[0].net_earnings).toBe(171.2);
+      expect(gaps[0].candidates[0].net_earnings).toBe(168.32);
     });
 
     it('excludes a candidate whose real drive time overflows the window', async () => {
@@ -269,7 +262,7 @@ describe('PlannerService (gap finder)', () => {
           void toLng;
           return {
             distanceMiles: 60,
-            // 200 min drive overflows: 200 + 45 + 10 = 255 > 160
+            // 200 min drive overflows the available window.
             driveTimeMins: toLat === 34.5 ? 200 : 6,
           };
         },
@@ -281,19 +274,12 @@ describe('PlannerService (gap finder)', () => {
       expect(gaps[0].candidates.map((c) => c.id)).toEqual(['pending-near']);
     });
 
-    it('falls back to the drive buffer when ORS is unavailable', async () => {
+    it('rejects a candidate when either ORS leg is unavailable', async () => {
       jest.spyOn(service, 'getToday').mockResolvedValue(dayPlan);
       prismaMock.job.findMany.mockResolvedValue([pendingJob('pending-1')]);
       orsMock.getRoute.mockResolvedValue(null);
 
-      const gaps = await service.findGaps('user-1', today);
-
-      expect(gaps).toHaveLength(1);
-      const candidate = gaps[0].candidates[0];
-      expect(candidate.miles_from).toBeNull();
-      expect(candidate.miles_from_label).toBeNull();
-      // no route → keep the stored net estimate
-      expect(candidate.net_earnings).toBe(130);
+      await expect(service.findGaps('user-1', today)).resolves.toEqual([]);
     });
 
     it('caps candidates at 3 per gap', async () => {

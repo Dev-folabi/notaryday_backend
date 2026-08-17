@@ -67,4 +67,5 @@ export const validationSchema = Joi.object({
   // New-account Pro trial (feature-flag gated)
   TRIAL_PLAN: Joi.boolean().default(false),
   TRIAL_DAYS: Joi.number().integer().min(1).default(30),
+  SOFT_DELETE_RETENTION_DAYS: Joi.number().integer().min(1).default(90),
 });

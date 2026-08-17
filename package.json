@@ -10,6 +10,10 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "start:api": "nest start",
+    "start:worker": "node dist/src/main-worker",
+    "start:dev:api": "nest start --watch",
+    "start:dev:worker": "ts-node -r tsconfig-paths/register src/main-worker.ts",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/src/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
@@ -100,7 +104,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.ts$": "ts-jest"
     },
     "moduleNameMapper": {
       "^generated/prisma$": "<rootDir>/../generated/prisma"

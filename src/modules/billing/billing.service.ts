@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from 'src/config/prisma.service';
+import { PrismaService } from '../../config/prisma.service';
 import { PlanTier, Prisma } from '../../../generated/prisma';
 import crypto from 'crypto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -460,7 +460,8 @@ export class BillingService {
       where: { id },
       data: {
         processed,
-        processed_at: new Date(),
+        processed_at: processed ? new Date() : null,
+        error: null,
       },
     });
   }
@@ -478,6 +479,32 @@ export class BillingService {
       event_name: eventName,
       payload,
       processed: false,
+    });
+  }
+
+  async persistWebhookEvent(
+    id: string,
+    eventName: string,
+    payload: LemonSqueezyPayload,
+  ): Promise<boolean> {
+    try {
+      await this.processIdempotency(id, eventName, payload);
+      return true;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async recordEventError(id: string, error: string) {
+    return this.prisma.lemonSqueezyEvent.update({
+      where: { id },
+      data: { error, processed: false, processed_at: null },
     });
   }
 

@@ -131,11 +131,22 @@ export class InvoicesService {
     });
   }
 
-  /** Best-effort enqueue that never blocks or fails the request on a slow/down
-   *  Redis. If the add is lost the task is retried manually, not by cron. */
-  private async enqueue(name: string, data: Record<string, unknown>) {
+  private async enqueue(
+    name: string,
+    data: Record<string, unknown>,
+    options?: {
+      jobId?: string;
+      attempts?: number;
+      removeOnComplete?: boolean;
+      removeOnFail?: boolean;
+    },
+  ) {
+    if (options?.jobId) {
+      const prior = await this.invoiceQueue.getJob(options.jobId);
+      await prior?.remove().catch(() => undefined);
+    }
     await Promise.race([
-      this.invoiceQueue.add(name, data),
+      this.invoiceQueue.add(name, data, options),
       new Promise<void>((resolve) => setTimeout(resolve, 2000)),
     ]).catch((err: unknown) => {
       this.logger.warn(
@@ -264,8 +275,7 @@ export class InvoicesService {
     return updated;
   }
 
-  /** Queue email send for an existing invoice (only on manual "Send"/"Resend";
-   *  never automatic, and never re-enqueued by a cron afterwards). */
+  /** Manual Send/Resend starts a fresh three-attempt delivery cycle. */
   async send(userId: string, id: string, recipientEmail?: string) {
     const invoice = await this.findOne(userId, id);
 
@@ -276,12 +286,35 @@ export class InvoicesService {
       );
     }
 
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const staleJob = await this.invoiceQueue.getJob(
+        `invoice-email-${id}-${attempt}`,
+      );
+      await staleJob?.remove().catch(() => undefined);
+    }
+
     await this.prisma.invoice.update({
       where: { id },
-      data: { recipient_email: email, email_pending: true },
+      data: {
+        recipient_email: email,
+        email_pending: true,
+        email_attempts: 0,
+        email_last_attempt_at: null,
+        email_last_error: null,
+        email_failed_at: null,
+      },
     });
 
-    await this.enqueue('send-email', { invoiceId: id, userId });
+    await this.enqueue(
+      'send-email',
+      { invoiceId: id, userId, attempt: 1 },
+      {
+        jobId: `invoice-email-${id}-1`,
+        attempts: 1,
+        removeOnComplete: true,
+        removeOnFail: true,
+      },
+    );
     return { queued: true };
   }
 
