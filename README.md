@@ -1,5 +1,24 @@
 # Notary Day Backend
 
+<div align="center">
+
+![NestJS 11](https://img.shields.io/badge/NestJS_11-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)
+![TypeScript 5](https://img.shields.io/badge/TypeScript_5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![Prisma 7](https://img.shields.io/badge/Prisma_7-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+![BullMQ](https://img.shields.io/badge/BullMQ-FF6B6B?style=for-the-badge&logo=redis&logoColor=white)
+
+**A domain-driven API for intelligent scheduling, profitability analysis, and business operations for mobile notaries.**
+
+[Capabilities](#what-the-api-provides) · [Architecture](#architecture) · [Business Logic](#core-business-logic) · [Setup](#local-development) · [Verification](#verification)
+
+</div>
+
+---
+
+## Overview
+
 Notary Day is an operations platform for mobile notaries and loan signing agents. This repository contains the NestJS API that turns a notary's schedule, travel time, scanback obligations, and business costs into practical decisions.
 
 The API is designed around a real operational constraint: after many loan signings, the notary must remain at the signing location to scan and return documents. That scanback window is treated as part of the appointment rather than an afterthought.
