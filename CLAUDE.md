@@ -44,7 +44,7 @@ src/
 ├── config/
 │   ├── configuration.ts            ← Config factory (reads process.env)
 │   ├── validation.schema.ts        ← Joi schema — ALL env vars validated here
-│   └── redis.config.ts             ← ioredis connection factory (Upstash TLS)
+│   └── redis.config.ts             ← ioredis connection factory
 │
 ├── common/
 │   ├── guards/
@@ -174,9 +174,9 @@ bootstrap();
 
 ---
 
-## 5. Redis / Upstash — Cache Key Conventions
+## 5. Redis Cache Key Conventions
 
-Connect with ioredis using the Upstash TLS URL. All keys follow this pattern:
+Connect with ioredis using the `REDIS_URL` connection string. The URL may use `redis://` or `rediss://`. All keys follow this pattern:
 
 ```
 {resource}:{userId}:{qualifier}

@@ -48,7 +48,6 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
       ],
     }),
 
-    // BullMQ (Redis connection parsed from UPSTASH_REDIS_URL)
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

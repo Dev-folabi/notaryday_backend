@@ -9,19 +9,20 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   async onModuleInit() {
-    const url = this.configService.get<string>('UPSTASH_REDIS_URL');
+    const url = this.configService.get<string>('REDIS_URL');
     if (!url) {
-      throw new Error('UPSTASH_REDIS_URL is not configured');
+      throw new Error('REDIS_URL is not configured');
     }
 
     const isProduction =
       this.configService.get<string>('NODE_ENV') === 'production';
 
+    const parsedUrl = new URL(url);
+    const useTls = parsedUrl.protocol === 'rediss:';
+
     this.client = new Redis(url, {
-      tls: { rejectUnauthorized: isProduction },
+      ...(useTls ? { tls: { rejectUnauthorized: isProduction } } : {}),
       lazyConnect: true,
-      // Fail fast instead of queuing commands forever when the connection is
-      // down or half-open (e.g. Upstash sleeping idle sockets).
       enableOfflineQueue: false,
       commandTimeout: 5000,
     });
@@ -29,12 +30,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.client.connect();
       await this.client.ping();
-      console.log('[Redis] Connected to Upstash');
+      console.log('[Redis] Connected');
     } catch (err) {
-      // Don't crash the app when Redis is unreachable at boot; cache calls
-      // fail fast (enableOfflineQueue:false) and are guarded at every call
-      // site, and BullMQ buffers jobs until it reconnects. Only a missing URL
-      // is fatal, above.
       console.warn(
         `[Redis] Failed to connect at boot; cache degraded, queue jobs will buffer: ${
           err instanceof Error ? err.message : String(err)

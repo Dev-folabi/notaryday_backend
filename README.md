@@ -119,7 +119,7 @@ Important backend directories include:
 
 - Node.js 20 or newer
 - PostgreSQL
-- Redis or Upstash Redis
+- Redis 7 or a compatible Redis service
 - API credentials for the external services used by the features you enable
 
 The main integrations are OpenRouteService, OpenRouter, Resend, Cloudflare R2, Google Calendar, and Lemon Squeezy. Environment variables are validated with Joi during startup. Review `.env.example` for the complete configuration surface.
@@ -138,6 +138,17 @@ From this repository:
 
 The API runs on port `4000` by default. Swagger is available at `/docs` in development.
 
+### Docker Compose
+
+The included Compose configuration runs Redis, the Prisma migration job, the API, and the worker. PostgreSQL is intentionally external so the same setup can use Neon in staging or production.
+
+1. Create `.env` from `.env.example` and set the Neon `DATABASE_URL` and required application credentials.
+2. Start the stack with `docker compose up --build`.
+3. Check the API at `http://localhost:4000/api/v1/health`.
+4. Stop the stack with `docker compose down`.
+
+Compose keeps Redis on the internal Docker network and persists it in the `redis-data` volume. It overrides `REDIS_URL` with `redis://redis:6379` for the API, worker, and migration service.
+
 For a production-style local run, use `npm run build`, then run `npm run start:prod` for the API and `npm run start:worker` for background processing.
 
 ## Verification
@@ -149,6 +160,14 @@ For a production-style local run, use `npm run build`, then run `npm run start:p
 - `npm run build` generates Prisma artifacts, compiles NestJS, and copies runtime assets into `dist`.
 
 Tests isolate external services such as OpenRouteService, Nominatim, OpenRouter, Resend, and Lemon Squeezy. The highest-value scenarios cover CITT verdicts, profitability, scanback conflicts, planner behavior, public booking availability, and worker-driven workflows.
+
+## Continuous Integration and Images
+
+GitHub Actions verifies pull requests and pushes with Prisma generation, ESLint, Jest, and the production build. Only a push to `main` publishes a Docker image to GitHub Container Registry.
+
+The published image is `ghcr.io/dev-folabi/notaryday_backend`. Each successful `main` build publishes `latest` and an immutable `sha-<commit>` tag. The workflow does not deploy directly to the DigitalOcean Droplet.
+
+The production Droplet should provide a local Redis container and pull the image from GHCR. Neon remains the PostgreSQL provider. Store the Droplet's runtime configuration in a local `.env`, set `REDIS_URL=redis://redis:6379` for the Compose network, and use the immutable commit tag when a rollback-safe release is required.
 
 ## Engineering Highlights
 

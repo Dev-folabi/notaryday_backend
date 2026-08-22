@@ -5,7 +5,7 @@ export const databaseConfig = registerAs('database', () => ({
 }));
 
 export const redisConfig = registerAs('redis', () => ({
-  url: process.env.UPSTASH_REDIS_URL!,
+  url: process.env.REDIS_URL!,
 }));
 
 export const jwtConfig = registerAs('jwt', () => ({

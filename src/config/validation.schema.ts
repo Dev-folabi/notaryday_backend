@@ -5,7 +5,7 @@ export const validationSchema = Joi.object({
   DATABASE_URL: Joi.string().required(),
 
   // Redis
-  UPSTASH_REDIS_URL: Joi.string().required(),
+  REDIS_URL: Joi.string().uri().required(),
 
   // JWT
   JWT_SECRET: Joi.string().min(32).required(),
