@@ -846,6 +846,44 @@ export class BookingService {
     return { slots, notary: this.publicNotaryInfo(notary, settings) };
   }
 
+  /**
+   * Owner preview: identical slot computation to the public page but skips the
+   * plan and booking_page_enabled gates, so the notary can always preview how
+   * their own page looks (used by /booking-preview). No bookings can be
+   * created through it.
+   */
+  async getSlotsForOwner(
+    userId: string,
+    date: string,
+    serviceType?: SigningType,
+  ): Promise<{
+    slots: { time: string; iso: string }[];
+    notary: {
+      full_name: string | null;
+      username: string;
+      bio: string | null;
+      service_area_miles: number | null;
+      services: BookingServiceConfig[];
+      active_hours: Record<string, { start?: string; end?: string }> | null;
+      min_notice_hours: number | null;
+      timezone: string | null;
+      timezone_abbr: string | null;
+    };
+  }> {
+    const notary = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!notary) throw new NotFoundException('Notary not found');
+
+    const settings = await this.userSettings.get(notary.id);
+    const slots = await this.computeSlots(
+      notary.id,
+      settings,
+      date,
+      serviceType ?? SigningType.GENERAL,
+    );
+
+    return { slots, notary: this.publicNotaryInfo(notary, settings) };
+  }
+
   private async computeSlots(
     notaryId: string,
     settings: SlotSettings,

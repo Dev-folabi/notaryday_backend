@@ -11,6 +11,7 @@ describe('BookingController', () => {
   let reflector: Reflector;
   const service = {
     getSlots: jest.fn(),
+    getSlotsForOwner: jest.fn(),
     suggestAlternatives: jest.fn(),
     create: jest.fn(),
     findAll: jest.fn(),
@@ -81,6 +82,23 @@ describe('BookingController', () => {
     expect(result).toEqual({
       success: true,
       data: { slots: ['2026-08-03T10:00:00.000Z'] },
+    });
+  });
+
+  it('delegates owner preview slots and wraps the response', async () => {
+    service.getSlotsForOwner.mockResolvedValue({ slots: [], notary: null });
+    const result = await controller.getPreviewSlots('user-1', {
+      date: '2026-08-03',
+      service_type: SigningType.GENERAL,
+    });
+    expect(service.getSlotsForOwner).toHaveBeenCalledWith(
+      'user-1',
+      '2026-08-03',
+      SigningType.GENERAL,
+    );
+    expect(result).toEqual({
+      success: true,
+      data: { slots: [], notary: null },
     });
   });
 

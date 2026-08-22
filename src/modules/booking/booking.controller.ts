@@ -120,6 +120,41 @@ export class BookingController {
     return { success: true, data: booking };
   }
 
+  @Get('bookings/preview/slots')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Preview one's own booking page slots (owner review mode)",
+  })
+  @ApiQuery({ name: 'date', required: true, example: '2025-06-02' })
+  @ApiQuery({
+    name: 'service_type',
+    required: false,
+    enum: [
+      'GENERAL',
+      'LOAN_REFI',
+      'HYBRID',
+      'PURCHASE_CLOSING',
+      'FIELD_INSPECTION',
+      'APOSTILLE',
+    ],
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Slots + public notary info, ignoring plan/enable gates',
+  })
+  async getPreviewSlots(
+    @CurrentUser('id') userId: string,
+    @Query() query: GetSlotsQueryDto,
+  ) {
+    const result = await this.bookings.getSlotsForOwner(
+      userId,
+      query.date,
+      query.service_type,
+    );
+    return { success: true, data: result };
+  }
+
   @Get('bookings')
   @UseGuards(AuthGuard, PlanGuard)
   @RequiresPro()
