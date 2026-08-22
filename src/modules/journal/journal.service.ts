@@ -89,7 +89,7 @@ export class JournalService {
     }
     if (filters?.search) {
       const search = sanitizeText(filters.search, 200);
-      if (search) {
+      if (typeof search === 'string' && search) {
         where.OR = [
           { signer_name: { contains: search, mode: 'insensitive' } },
           { document_type: { contains: search, mode: 'insensitive' } },
