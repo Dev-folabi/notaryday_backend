@@ -26,13 +26,20 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   // CORS
-  const corsOrigin =
-    configService.get<string>('APP_URL') ?? 'http://localhost:3000';
+  const corsOrigins = (configService.get<string>('CORS_ORIGINS') ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (corsOrigins.length === 0) {
+    corsOrigins.push(
+      configService.get<string>('APP_URL') ?? 'http://localhost:3000',
+    );
+  }
   app.enableCors({
-    origin: corsOrigin,
+    origin: corsOrigins,
     credentials: true,
   });
-  logger.log(`CORS enabled for origin: ${corsOrigin}`);
+  logger.log(`CORS enabled for origins: ${corsOrigins.join(', ')}`);
 
   // Global validation pipe
   app.useGlobalPipes(

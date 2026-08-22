@@ -35,6 +35,7 @@ export class AuthService {
     password: string;
     username: string;
     fullName?: string;
+    state?: string;
   }) {
     // Check email not taken
     const existingEmail = await this.usersService.findByEmail(data.email);
@@ -58,6 +59,7 @@ export class AuthService {
       password: data.password,
       username: data.username,
       fullName: data.fullName,
+      state: data.state,
     });
 
     // Seed signing type defaults

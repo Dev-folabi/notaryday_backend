@@ -52,6 +52,7 @@ export const validationSchema = Joi.object({
 
   // App
   APP_URL: Joi.string().default('http://localhost:4000'),
+  CORS_ORIGINS: Joi.string().allow('').default(''),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'staging')
     .default('development'),

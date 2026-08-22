@@ -51,11 +51,12 @@ export class UsersService {
     password: string;
     username: string;
     fullName?: string;
+    state?: string;
   }): Promise<User> {
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_SALT_ROUNDS);
 
-    const trialEnabled =
-      this.configService.get<string>('TRIAL_PLAN') === 'true';
+    // Joi coerces the env string to a real boolean before it reaches here
+    const trialEnabled = this.configService.get<boolean>('TRIAL_PLAN') === true;
     const trialDays = this.configService.get<number>('TRIAL_DAYS') ?? 30;
 
     return this.prisma.user.create({
@@ -76,6 +77,7 @@ export class UsersService {
           create: {
             irs_rate_per_mile:
               this.configService.get<number>('IRS_RATE_PER_MILE') ?? 0.725,
+            ...(data.state ? { state: data.state } : {}),
           },
         },
       },

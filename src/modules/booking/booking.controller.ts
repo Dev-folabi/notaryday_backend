@@ -18,7 +18,9 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../../common/guards/auth.guard';
+import { PlanGuard } from '../../common/guards/plan.guard';
 import { Public } from '../../common/decorators/public.decorator';
+import { RequiresPro } from '../../common/decorators/requires-pro.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BookingService } from './booking.service';
 import {
@@ -119,7 +121,8 @@ export class BookingController {
   }
 
   @Get('bookings')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, PlanGuard)
+  @RequiresPro()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all bookings for the authenticated notary' })
   @ApiQuery({ name: 'status', required: false, enum: BookingStatus })
@@ -133,7 +136,8 @@ export class BookingController {
   }
 
   @Get('bookings/:id')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, PlanGuard)
+  @RequiresPro()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get a single booking by ID' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
@@ -145,7 +149,8 @@ export class BookingController {
   }
 
   @Get('bookings/:id/analysis')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, PlanGuard)
+  @RequiresPro()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get booking profitability & conflict analysis' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
@@ -156,7 +161,8 @@ export class BookingController {
   }
 
   @Post('bookings/:id/approve')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, PlanGuard)
+  @RequiresPro()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Approve a pending booking request' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
@@ -167,7 +173,8 @@ export class BookingController {
   }
 
   @Patch('bookings/:id/decline')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, PlanGuard)
+  @RequiresPro()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Decline a booking with optional reason and alternatives',
@@ -184,7 +191,8 @@ export class BookingController {
   }
 
   @Post('bookings/:id/cancel')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, PlanGuard)
+  @RequiresPro()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cancel a confirmed booking' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
