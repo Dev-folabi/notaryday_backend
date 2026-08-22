@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../../generated/prisma';
 import { PrismaService } from '../../config/prisma.service';
 import { CreateExpenseDto, UpdateExpenseDto } from './dto/expense.dto';
 
@@ -20,7 +21,10 @@ export class ExpensesService {
     userId: string,
     filters?: { category?: string; from?: string; to?: string },
   ) {
-    const where: any = { user_id: userId, deleted_at: null };
+    const where: Prisma.ExpenseWhereInput = {
+      user_id: userId,
+      deleted_at: null,
+    };
     if (filters?.category) where.category = filters.category;
     if (filters?.from || filters?.to) {
       where.expense_date = {};
