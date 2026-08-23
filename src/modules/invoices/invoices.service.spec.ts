@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { InvoicesService } from './invoices.service';
 import { PrismaService } from '../../config/prisma.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { JobStatus, Prisma } from '../../../generated/prisma';
 
 describe('InvoicesService', () => {
   let service: InvoicesService;
@@ -12,6 +13,8 @@ describe('InvoicesService', () => {
     invoice: {
       update: jest.Mock;
       findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
     };
     job: {
       update: jest.Mock;
@@ -33,11 +36,30 @@ describe('InvoicesService', () => {
     email_pending: false,
   };
 
+  const completeJob = {
+    id: 'j1',
+    user_id: 'u1',
+    status: JobStatus.COMPLETE,
+    fee: 100,
+    mileage_cost: 10,
+    client_email: 'client@example.com',
+    client_name: 'Client Name',
+    platform_name: null,
+  };
+
+  const p2002 = () =>
+    new Prisma.PrismaClientKnownRequestError(
+      'A record with this value already exists.',
+      { code: 'P2002', clientVersion: 'test' },
+    );
+
   beforeEach(async () => {
     prisma = {
       invoice: {
         update: jest.fn().mockResolvedValue({ id: 'inv-1' }),
         findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
       },
       job: {
         update: jest.fn().mockResolvedValue({ id: 'j1' }),
@@ -266,6 +288,129 @@ describe('InvoicesService', () => {
       await service.syncDraftFromJob('u1', 'j1', { fee: 500, mileage_cost: 5 });
 
       expect(prisma.invoice.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('generate()', () => {
+    const year = new Date().getFullYear();
+    const createdInvoice = { ...baseInvoice, id: 'inv-new' };
+
+    beforeEach(() => {
+      prisma.job.findFirst.mockResolvedValue(completeJob);
+    });
+
+    it('creates an invoice with the next per-user number and queues the PDF', async () => {
+      prisma.invoice.create.mockResolvedValue(createdInvoice);
+      prisma.invoice.findFirst
+        .mockResolvedValueOnce(null) // nextInvoiceNumber: no prior invoices
+        .mockResolvedValueOnce(createdInvoice); // findWithJob
+
+      const result = await service.generate('u1', 'j1');
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          user_id: 'u1',
+          job_id: 'j1',
+          invoice_number: `INV-${year}-0001`,
+          subtotal: 100,
+          travel_fee: 10,
+          total: 110,
+        }),
+      });
+      expect(enqueue).toHaveBeenCalledWith('generate-pdf', {
+        invoiceId: 'inv-new',
+        userId: 'u1',
+      });
+      expect(result).toEqual(createdInvoice);
+    });
+
+    it('continues the per-user sequence from the last invoice', async () => {
+      prisma.invoice.create.mockResolvedValue(createdInvoice);
+      prisma.invoice.findFirst
+        .mockResolvedValueOnce({ invoice_number: `INV-${year}-0041` })
+        .mockResolvedValueOnce(createdInvoice);
+
+      await service.generate('u1', 'j1');
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            invoice_number: `INV-${year}-0042`,
+          }),
+        }),
+      );
+    });
+
+    it('returns the existing invoice instead of creating a second one', async () => {
+      prisma.invoice.findUnique.mockResolvedValue({
+        ...baseInvoice,
+        recipient_email: 'old@example.com',
+        pdf_url: 'https://r2.example.com/x.pdf',
+      });
+      prisma.invoice.findFirst.mockResolvedValue(baseInvoice);
+
+      const result = await service.generate('u1', 'j1');
+
+      expect(prisma.invoice.create).not.toHaveBeenCalled();
+      expect(prisma.invoice.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'inv-1' },
+          data: expect.objectContaining({
+            recipient_email: 'client@example.com',
+            recipient_name: 'Client Name',
+          }),
+        }),
+      );
+      expect(result).toEqual(baseInvoice);
+    });
+
+    it('returns the racing invoice when a concurrent create wins the job_id', async () => {
+      prisma.invoice.create.mockRejectedValueOnce(p2002());
+      // First findUnique: initial existing check. Second: re-check after P2002.
+      prisma.invoice.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...baseInvoice, id: 'inv-raced' });
+      prisma.invoice.findFirst
+        .mockResolvedValueOnce(null) // nextInvoiceNumber before the raced create
+        .mockResolvedValueOnce({ ...baseInvoice, id: 'inv-raced' }); // findWithJob
+
+      const result = await service.generate('u1', 'j1');
+
+      expect(prisma.invoice.create).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ ...baseInvoice, id: 'inv-raced' });
+    });
+
+    it('retries with a fresh number when the invoice number collides', async () => {
+      prisma.invoice.create
+        .mockRejectedValueOnce(p2002())
+        .mockResolvedValueOnce(createdInvoice);
+      prisma.invoice.findUnique.mockResolvedValue(null); // no job race
+      prisma.invoice.findFirst
+        .mockResolvedValueOnce(null) // attempt 1: number 0001 taken elsewhere
+        .mockResolvedValueOnce({ invoice_number: `INV-${year}-0001` }) // attempt 2
+        .mockResolvedValueOnce(createdInvoice); // findWithJob
+
+      await service.generate('u1', 'j1');
+
+      expect(prisma.invoice.create).toHaveBeenCalledTimes(2);
+      expect(prisma.invoice.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            invoice_number: `INV-${year}-0002`,
+          }),
+        }),
+      );
+    });
+
+    it('gives up with a conflict after repeated collisions', async () => {
+      prisma.invoice.create.mockRejectedValue(p2002());
+      prisma.invoice.findUnique.mockResolvedValue(null);
+      prisma.invoice.findFirst.mockResolvedValue(null);
+
+      await expect(service.generate('u1', 'j1')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.invoice.create).toHaveBeenCalledTimes(5);
     });
   });
 

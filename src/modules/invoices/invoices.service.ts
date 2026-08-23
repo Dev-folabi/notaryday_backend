@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -11,7 +12,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { QUEUE_INVOICE } from '../../queues/queue.constants';
 import { UpdateInvoiceDto } from './dto/invoice.dto';
-import { JobStatus, Prisma } from '../../../generated/prisma';
+import { Invoice, JobStatus, Prisma } from '../../../generated/prisma';
 import { calculateProfitability } from '../../common/utils/profitability.util';
 
 @Injectable()
@@ -33,7 +34,8 @@ export class InvoicesService {
     if (job.status !== JobStatus.COMPLETE)
       throw new BadRequestException('Job must be complete to generate invoice');
 
-    // Check if invoice already exists
+    // generate() is idempotent per job: an existing invoice is refreshed and
+    // returned instead of creating a second one.
     const existing = await this.prisma.invoice.findUnique({
       where: { job_id: jobId },
     });
@@ -42,43 +44,92 @@ export class InvoicesService {
     const recipientName = job.client_name ?? job.platform_name ?? null;
 
     if (existing) {
-      await this.prisma.invoice.update({
-        where: { id: existing.id },
-        data: {
-          recipient_email: recipientEmail || existing.recipient_email,
-          recipient_name: recipientName ?? existing.recipient_name,
-        },
-      });
-      if (!existing.pdf_url && !existing.pdf_pending) {
-        await this.prisma.invoice.update({
-          where: { id: existing.id },
-          data: { pdf_pending: true },
-        });
-        await this.enqueue('generate-pdf', {
-          invoiceId: existing.id,
-          userId,
-        });
-      }
-      return this.prisma.invoice.findFirst({
-        where: { id: existing.id },
-        include: {
-          job: {
-            select: {
-              address: true,
-              signing_type: true,
-              appointment_time: true,
-              fee: true,
-              platform_fee: true,
-              net_earnings: true,
-              mileage_cost: true,
-              client_name: true,
-            },
-          },
-        },
+      return this.refreshExisting(existing, userId, {
+        recipientEmail,
+        recipientName,
       });
     }
 
-    // Get next invoice number
+    const subtotal = Number(job.fee);
+    const travelFee = Number(job.mileage_cost ?? 0);
+    const total = subtotal + travelFee;
+
+    // The existence check above isn't atomic with the create, so concurrent
+    // calls can still trip a unique constraint (another generate() for the
+    // same job, or a raced invoice number): re-check the job and retry with a
+    // fresh number instead of surfacing the raw P2002 as a 409.
+    let invoice: Invoice | null = null;
+    for (let attempt = 0; attempt < 5 && !invoice; attempt++) {
+      try {
+        invoice = await this.prisma.invoice.create({
+          data: {
+            user_id: userId,
+            job_id: jobId,
+            invoice_number: await this.nextInvoiceNumber(userId),
+            recipient_email: recipientEmail,
+            recipient_name: recipientName,
+            subtotal,
+            travel_fee: travelFee,
+            total,
+          },
+        });
+      } catch (err) {
+        if (!this.isUniqueViolation(err)) throw err;
+        const raced = await this.prisma.invoice.findUnique({
+          where: { job_id: jobId },
+        });
+        if (raced) {
+          return this.refreshExisting(raced, userId, {
+            recipientEmail,
+            recipientName,
+          });
+        }
+      }
+    }
+    if (!invoice) {
+      throw new ConflictException(
+        'Could not allocate a unique invoice number, please retry',
+      );
+    }
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { pdf_pending: true },
+    });
+    await this.enqueue('generate-pdf', { invoiceId: invoice.id, userId });
+
+    return this.findWithJob(invoice.id);
+  }
+
+  /** Re-sync recipient details, re-queue the PDF when needed, and return the
+   *  invoice for an already-invoiced job. */
+  private async refreshExisting(
+    existing: Invoice,
+    userId: string,
+    recipients: { recipientEmail: string; recipientName: string | null },
+  ) {
+    await this.prisma.invoice.update({
+      where: { id: existing.id },
+      data: {
+        recipient_email: recipients.recipientEmail || existing.recipient_email,
+        recipient_name: recipients.recipientName ?? existing.recipient_name,
+      },
+    });
+    if (!existing.pdf_url && !existing.pdf_pending) {
+      await this.prisma.invoice.update({
+        where: { id: existing.id },
+        data: { pdf_pending: true },
+      });
+      await this.enqueue('generate-pdf', {
+        invoiceId: existing.id,
+        userId,
+      });
+    }
+    return this.findWithJob(existing.id);
+  }
+
+  /** Next number in the per-user INV-<year>-<seq> sequence. */
+  private async nextInvoiceNumber(userId: string) {
     const year = new Date().getFullYear();
     const lastInvoice = await this.prisma.invoice.findFirst({
       where: { user_id: userId, invoice_number: { startsWith: `INV-${year}` } },
@@ -87,33 +138,12 @@ export class InvoicesService {
     const seq = lastInvoice
       ? parseInt(lastInvoice.invoice_number.split('-')[2]) + 1
       : 1;
-    const invoiceNumber = `INV-${year}-${String(seq).padStart(4, '0')}`;
+    return `INV-${year}-${String(seq).padStart(4, '0')}`;
+  }
 
-    const subtotal = Number(job.fee);
-    const travelFee = Number(job.mileage_cost ?? 0);
-    const total = subtotal + travelFee;
-
-    const invoice = await this.prisma.invoice.create({
-      data: {
-        user_id: userId,
-        job_id: jobId,
-        invoice_number: invoiceNumber,
-        recipient_email: recipientEmail,
-        recipient_name: recipientName,
-        subtotal,
-        travel_fee: travelFee,
-        total,
-      },
-    });
-
-    await this.prisma.invoice.update({
-      where: { id: invoice.id },
-      data: { pdf_pending: true },
-    });
-    await this.enqueue('generate-pdf', { invoiceId: invoice.id, userId });
-
+  private findWithJob(id: string) {
     return this.prisma.invoice.findFirst({
-      where: { id: invoice.id },
+      where: { id },
       include: {
         job: {
           select: {
@@ -129,6 +159,13 @@ export class InvoicesService {
         },
       },
     });
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    return (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2002'
+    );
   }
 
   private async enqueue(
