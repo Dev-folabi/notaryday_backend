@@ -134,7 +134,11 @@ export class JobImportController {
   @ApiResponse({ status: 201, description: 'Parsed job data from screenshot' })
   @ApiResponse({ status: 400, description: 'Invalid file or unable to parse' })
   @ApiResponse({ status: 403, description: 'Pro subscription required' })
-  async upload(@CurrentUser('id') userId: string, @UploadedFile() file: any) {
+  async upload(
+    @CurrentUser('id') userId: string,
+    @UploadedFile()
+    file: { originalname: string; buffer: Buffer; mimetype: string },
+  ) {
     const result = await this.jobImport.handleUpload(userId, file);
     return { success: true, data: result };
   }

@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from 'src/config/prisma.service';
+import { PrismaService } from '../../config/prisma.service';
 import { PlanTier, Prisma } from '../../../generated/prisma';
 import crypto from 'crypto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 export interface LemonSqueezyAttributes {
   variant_id: number;
@@ -48,6 +49,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly emailRenderer: EmailRendererService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   /**
@@ -267,6 +269,10 @@ export class BillingService {
     });
 
     this.logger.log(`User ${userId} upgraded to ${plan}`);
+    this.analytics.track('subscription_changed', userId, {
+      action: 'created',
+      plan,
+    });
     return { processed: true };
   }
 
@@ -306,6 +312,12 @@ export class BillingService {
             : null,
         },
       });
+
+      this.analytics.track('subscription_changed', user.id, {
+        action: 'updated',
+        plan,
+        status: attributes.status,
+      });
     }
 
     return { processed: true };
@@ -342,6 +354,10 @@ export class BillingService {
     this.logger.log(
       `User ${user.id} subscription cancelled, access until ${attributes.ends_at}`,
     );
+    this.analytics.track('subscription_changed', user.id, {
+      action: 'cancelled',
+      plan: user.plan,
+    });
     return { processed: true };
   }
 
@@ -369,6 +385,11 @@ export class BillingService {
         lemon_squeezy_subscription_id: null,
         plan_expires_at: null,
       },
+    });
+
+    this.analytics.track('subscription_changed', user.id, {
+      action: 'expired',
+      plan: PlanTier.FREE,
     });
 
     this.logger.log(
@@ -460,7 +481,8 @@ export class BillingService {
       where: { id },
       data: {
         processed,
-        processed_at: new Date(),
+        processed_at: processed ? new Date() : null,
+        error: null,
       },
     });
   }
@@ -478,6 +500,32 @@ export class BillingService {
       event_name: eventName,
       payload,
       processed: false,
+    });
+  }
+
+  async persistWebhookEvent(
+    id: string,
+    eventName: string,
+    payload: LemonSqueezyPayload,
+  ): Promise<boolean> {
+    try {
+      await this.processIdempotency(id, eventName, payload);
+      return true;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async recordEventError(id: string, error: string) {
+    return this.prisma.lemonSqueezyEvent.update({
+      where: { id },
+      data: { error, processed: false, processed_at: null },
     });
   }
 

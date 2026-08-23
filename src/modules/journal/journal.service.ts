@@ -6,7 +6,7 @@ import {
   sanitizeStrings,
   sanitizeText,
 } from '../../common/utils/sanitize.util';
-import { Job } from '../../../generated/prisma';
+import { Job, Prisma } from '../../../generated/prisma';
 
 @Injectable()
 export class JournalService {
@@ -78,7 +78,10 @@ export class JournalService {
     userId: string,
     filters?: { from?: string; to?: string; search?: string },
   ) {
-    const where: any = { user_id: userId, deleted_at: null };
+    const where: Prisma.JournalEntryWhereInput = {
+      user_id: userId,
+      deleted_at: null,
+    };
     if (filters?.from || filters?.to) {
       where.entry_date = {};
       if (filters.from) where.entry_date.gte = new Date(filters.from);
@@ -86,7 +89,7 @@ export class JournalService {
     }
     if (filters?.search) {
       const search = sanitizeText(filters.search, 200);
-      if (search) {
+      if (typeof search === 'string' && search) {
         where.OR = [
           { signer_name: { contains: search, mode: 'insensitive' } },
           { document_type: { contains: search, mode: 'insensitive' } },

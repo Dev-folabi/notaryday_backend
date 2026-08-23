@@ -11,9 +11,13 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JwtService } from '@nestjs/jwt';
 import { RedisService } from '../../config/redis.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class AuthService {
+  private readonly blacklistCache = new Map<string, boolean>();
+  private static readonly BLACKLIST_CACHE_TTL_MS = 60_000;
+
   constructor(
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
@@ -23,6 +27,7 @@ export class AuthService {
     private readonly notificationsService: NotificationsService,
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   async register(data: {
@@ -30,6 +35,7 @@ export class AuthService {
     password: string;
     username: string;
     fullName?: string;
+    state?: string;
   }) {
     // Check email not taken
     const existingEmail = await this.usersService.findByEmail(data.email);
@@ -53,6 +59,7 @@ export class AuthService {
       password: data.password,
       username: data.username,
       fullName: data.fullName,
+      state: data.state,
     });
 
     // Seed signing type defaults
@@ -70,6 +77,11 @@ export class AuthService {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...rest } = user;
+
+    this.analytics.track('user_registered', user.id, {
+      plan: user.plan,
+      trial: user.plan_expires_at ? true : false,
+    });
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email });
     return { user: rest, token };
@@ -151,12 +163,23 @@ export class AuthService {
     const remainingTime = decoded.exp - Math.floor(Date.now() / 1000);
     if (remainingTime > 0) {
       await this.redisService.set(`blacklist:${token}`, 'true', remainingTime);
+      this.blacklistCache.delete(token);
     }
   }
 
   async isTokenBlacklisted(token: string): Promise<boolean> {
+    if (this.blacklistCache.has(token)) {
+      return this.blacklistCache.get(token)!;
+    }
+
     const blacklisted = await this.redisService.get(`blacklist:${token}`);
-    return !!blacklisted;
+    const result = !!blacklisted;
+    this.blacklistCache.set(token, result);
+    setTimeout(
+      () => this.blacklistCache.delete(token),
+      AuthService.BLACKLIST_CACHE_TTL_MS,
+    ).unref();
+    return result;
   }
 
   async getMeFromToken(token: string) {

@@ -1,0 +1,42 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  notaryday-api:
+    image: ghcr.io/dev-folabi/notaryday_backend:latest
+    restart: unless-stopped
+    build:
+      context: .
+      target: production
+    env_file:
+      - .env
+    ports:
+      - "4000:4000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["node", "dist/src/main"]
+
+  notaryday-worker:
+    image: ghcr.io/dev-folabi/notaryday_backend:latest
+    restart: unless-stopped
+    build:
+      context: .
+      target: production
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["node", "dist/src/main-worker"]
+
+volumes:
+  redis_data:

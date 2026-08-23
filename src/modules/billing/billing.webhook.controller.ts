@@ -11,13 +11,19 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
 import { BillingService, LemonSqueezyPayload } from './billing.service';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+import { QUEUE_BILLING_WEBHOOK } from '../../queues/queue.constants';
 
 @ApiTags('Billing')
 @Controller('billing/webhook')
 export class BillingWebhookController {
   private readonly logger = new Logger(BillingWebhookController.name);
 
-  constructor(private readonly billingService: BillingService) {}
+  constructor(
+    private readonly billingService: BillingService,
+    @InjectQueue(QUEUE_BILLING_WEBHOOK) private readonly billingQueue: Queue,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.OK)
@@ -61,33 +67,25 @@ export class BillingWebhookController {
       return { received: true };
     }
 
-    try {
-      await this.billingService.processIdempotency(
-        eventId,
-        eventName,
-        parsedPayload,
-      );
-    } catch {
-      const existing = await this.billingService.findEvent(eventId);
-      if (existing?.processed) {
-        this.logger.log(`Duplicate event ${eventId}`);
-        return { received: true };
-      }
-      this.logger.log(`Retrying previously failed event ${eventId}`);
+    const created = await this.billingService.persistWebhookEvent(
+      eventId,
+      eventName,
+      parsedPayload,
+    );
+    if (!created) {
+      this.logger.log(`Duplicate event ${eventId}`);
+      return { received: true };
     }
 
-    try {
-      const result = await this.billingService.processWebhook(
-        eventName,
-        parsedPayload,
-      );
-
-      await this.billingService.updateEvent(eventId, result.processed);
-
-      return { received: true, processed: result.processed };
-    } catch {
-      this.logger.error(`Error processing webhook ${eventName}`);
-      return { received: true, error: 'Processing failed' };
-    }
+    await this.billingQueue.add(
+      'process-event',
+      { eventId },
+      {
+        jobId: `billing-event-${eventId}`,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+      },
+    );
+    return { received: true, queued: true };
   }
 }

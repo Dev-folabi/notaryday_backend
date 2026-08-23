@@ -4,11 +4,11 @@ import { BullRootModuleOptions } from '@nestjs/bull';
 export const bullRedisConnection = (
   config: ConfigService,
 ): BullRootModuleOptions => {
-  const url = config.get<string>('UPSTASH_REDIS_URL');
+  const url = config.get<string>('REDIS_URL');
   const isProduction = config.get<string>('NODE_ENV') === 'production';
 
   if (!url) {
-    throw new Error('UPSTASH_REDIS_URL is not configured');
+    throw new Error('REDIS_URL is not configured');
   }
 
   const parsed = new URL(url);
@@ -25,5 +25,10 @@ export const bullRedisConnection = (
       connectTimeout: 5000,
       keepAlive: 5000,
     } as BullRootModuleOptions['redis'],
+    settings: {
+      drainDelay: 60,
+      guardInterval: 30000,
+      stalledInterval: 300000,
+    },
   };
 };

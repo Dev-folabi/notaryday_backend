@@ -2,7 +2,6 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bull';
 import { AppConfigModule } from './config/config.module';
 import { RedisModule } from './config/redis.module';
@@ -17,6 +16,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { BotBlockMiddleware } from './common/middleware/bot-block.middleware';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { CittModule } from './modules/citt/citt.module';
@@ -30,7 +30,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { JournalModule } from './modules/journal/journal.module';
 import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
-import { WorkersModule } from './workers/workers.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -48,10 +48,6 @@ import { WorkersModule } from './workers/workers.module';
       ],
     }),
 
-    // Scheduling
-    ScheduleModule.forRoot(),
-
-    // BullMQ (Redis connection parsed from UPSTASH_REDIS_URL)
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -69,6 +65,7 @@ import { WorkersModule } from './workers/workers.module';
     RedisModule,
     PrismaModule,
     QueueModule,
+    AnalyticsModule,
 
     // Domain modules
     AuthModule,
@@ -89,13 +86,16 @@ import { WorkersModule } from './workers/workers.module';
     ReportsModule,
     JournalModule,
     EmailTemplatesModule,
-    WorkersModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer
+      .apply(BotBlockMiddleware)
+      .forRoutes('*')
+      .apply(LoggerMiddleware)
+      .forRoutes('*');
   }
 }

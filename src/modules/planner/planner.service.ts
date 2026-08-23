@@ -517,7 +517,6 @@ export class PlannerService {
 
     const gaps: GapCandidate[] = [];
     const BUFFER = 10; // minutes of breathing room around the slot
-    const DRIVE_BUFFER = 20; // fallback drive minutes when routing is unavailable
 
     for (let i = 0; i < plan.jobs.length - 1; i++) {
       const curr = plan.jobs[i];
@@ -526,9 +525,7 @@ export class PlannerService {
       const currEnds =
         curr.scanback_ends_at ?? curr.signing_ends_at ?? curr.appointment_time;
       const gapStartMs = currEnds.getTime() + BUFFER * 60_000;
-      const driveToNext = nextJob.drive_from_prev_mins ?? DRIVE_BUFFER;
-      const gapEndMs =
-        nextJob.appointment_time.getTime() - (driveToNext + BUFFER) * 60_000;
+      const gapEndMs = nextJob.appointment_time.getTime() - BUFFER * 60_000;
       const gapMins = (gapEndMs - gapStartMs) / 60_000;
 
       if (gapMins < 30) continue; // too short
@@ -537,6 +534,8 @@ export class PlannerService {
       // the end of the preceding job.
       const fromLat = curr.lat ? Number(curr.lat) : null;
       const fromLng = curr.lng ? Number(curr.lng) : null;
+      const nextLat = nextJob.lat ? Number(nextJob.lat) : null;
+      const nextLng = nextJob.lng ? Number(nextJob.lng) : null;
       const prevLabel = `Job ${i + 1}`;
       const nextLabel = `Job ${i + 2}`;
 
@@ -550,33 +549,36 @@ export class PlannerService {
         const pLat = p.lat != null ? Number(p.lat) : null;
         const pLng = p.lng != null ? Number(p.lng) : null;
 
-        let driveMins = DRIVE_BUFFER;
-        let milesFrom: number | null = null;
-        let milesFromLabel: string | null = null;
         if (
-          fromLat != null &&
-          fromLng != null &&
-          pLat != null &&
-          pLng != null
+          fromLat == null ||
+          fromLng == null ||
+          pLat == null ||
+          pLng == null ||
+          nextLat == null ||
+          nextLng == null
         ) {
-          const route = await this.ors.getRoute(fromLat, fromLng, pLat, pLng);
-          if (route) {
-            driveMins = route.driveTimeMins;
-            milesFrom = route.distanceMiles;
-            milesFromLabel = prevLabel;
-          }
+          continue;
         }
+        const [routeToCandidate, routeToNext] = await Promise.all([
+          this.ors.getRoute(fromLat, fromLng, pLat, pLng),
+          this.ors.getRoute(pLat, pLng, nextLat, nextLng),
+        ]);
+        if (!routeToCandidate || !routeToNext) continue;
 
-        const totalNeeded = driveMins + signingMins + scanbackMins + BUFFER;
+        const totalNeeded =
+          routeToCandidate.driveTimeMins +
+          signingMins +
+          scanbackMins +
+          routeToNext.driveTimeMins;
         if (totalNeeded > gapMins) continue;
 
         const fee = Number(p.fee ?? 0);
         const platformFee = Number(p.platform_fee ?? 0);
+        const totalLegMiles =
+          routeToCandidate.distanceMiles + routeToNext.distanceMiles;
         const netEarnings =
-          milesFrom != null
-            ? Math.round((fee - milesFrom * 2 * irsRate - platformFee) * 100) /
-              100
-            : Number(p.net_earnings ?? fee);
+          Math.round((fee - totalLegMiles * 2 * irsRate - platformFee) * 100) /
+          100;
 
         matched.push({
           id: p.id,
@@ -589,8 +591,8 @@ export class PlannerService {
           platform_name: p.platform_name,
           client_name: p.client_name,
           appointment_time: p.appointment_time,
-          miles_from: milesFrom,
-          miles_from_label: milesFromLabel,
+          miles_from: totalLegMiles,
+          miles_from_label: prevLabel,
         });
       }
 

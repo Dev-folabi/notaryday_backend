@@ -12,6 +12,7 @@ import { Prisma } from '../../generated/prisma';
 import { getLocalEmailAssets } from '../common/email/email-assets';
 import { EmailRendererService } from '../common/email/email-renderer.service';
 import { EmailTemplatesService } from '../modules/email-templates/email-templates.service';
+import { AnalyticsService } from '../modules/analytics/analytics.service';
 
 function fmtInTz(
   date: Date,
@@ -64,6 +65,7 @@ export class InvoiceProcessor {
     private readonly emailRenderer: EmailRendererService,
     private readonly emailTemplates: EmailTemplatesService,
     private readonly config: ConfigService,
+    private readonly analytics: AnalyticsService,
   ) {
     const r2 = this.config.get<{
       accountId: string;
@@ -90,7 +92,7 @@ export class InvoiceProcessor {
       const doc = new PDFDocument({ margin: 42, size: 'LETTER' });
       const chunks: Buffer[] = [];
 
-      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
@@ -530,25 +532,49 @@ export class InvoiceProcessor {
   }
 
   @Process('send-email')
-  async handleSendEmail(job: Job<{ invoiceId: string; userId: string }>) {
-    const { invoiceId } = job.data;
+  async handleSendEmail(
+    job: Job<{ invoiceId: string; userId: string; attempt: number }>,
+  ) {
+    const { invoiceId, attempt } = job.data;
+    if (!Number.isInteger(attempt) || attempt < 1 || attempt > 3) return;
+
+    const claimed = await this.prisma.invoice.updateMany({
+      where: {
+        id: invoiceId,
+        deleted_at: null,
+        email_pending: true,
+        email_attempts: attempt - 1,
+      },
+      data: {
+        email_attempts: attempt,
+        email_last_attempt_at: new Date(),
+      },
+    });
+    if (claimed.count === 0) return;
+
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: { job: true, user: true },
     });
-    if (!invoice || !invoice.recipient_email) return;
-    const notificationConfig = await this.userSettings.getNotificationConfig(
-      invoice.user_id,
-    );
-    if (!notificationConfig.prefs.client_invoice) {
-      await this.prisma.invoice.update({
-        where: { id: invoiceId },
-        data: { email_pending: false },
-      });
-      return;
-    }
-
     try {
+      if (!invoice || !invoice.recipient_email) {
+        throw new Error('Invoice or recipient email not found');
+      }
+      const notificationConfig = await this.userSettings.getNotificationConfig(
+        invoice.user_id,
+      );
+      if (!notificationConfig.prefs.client_invoice) {
+        await this.prisma.invoice.update({
+          where: { id: invoiceId },
+          data: {
+            email_pending: false,
+            email_last_error: null,
+            email_failed_at: null,
+          },
+        });
+        return;
+      }
+
       const timezone =
         (await this.userSettings.get(invoice.user_id)).timezone ?? null;
       const template = await this.emailTemplates.findByType(
@@ -606,14 +632,33 @@ export class InvoiceProcessor {
       this.logger.log(
         `Invoice ${invoice.invoice_number} emailed to ${invoice.recipient_email}`,
       );
+      this.analytics.track('invoice_sent', invoice.user_id, {
+        invoice_number: invoice.invoice_number.toString(),
+        total: Number(invoice.total),
+        attempt,
+      });
       await this.prisma.invoice.update({
         where: { id: invoiceId },
-        data: { email_pending: false, sent_at: new Date() },
+        data: {
+          email_pending: false,
+          sent_at: new Date(),
+          email_last_error: null,
+          email_failed_at: null,
+        },
       });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       this.logger.error(`Failed to send invoice email: ${errorMessage}`);
+      await this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          email_pending: attempt < 3,
+          email_last_error: errorMessage,
+          email_failed_at: attempt === 3 ? new Date() : null,
+        },
+      });
+      throw error;
     }
   }
 }

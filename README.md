@@ -1,518 +1,186 @@
-# Notary Day — Backend API
+# Notary Day Backend
 
 <div align="center">
 
-![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![NestJS 11](https://img.shields.io/badge/NestJS_11-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)
+![TypeScript 5](https://img.shields.io/badge/TypeScript_5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![Prisma 7](https://img.shields.io/badge/Prisma_7-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
-![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
 ![BullMQ](https://img.shields.io/badge/BullMQ-FF6B6B?style=for-the-badge&logo=redis&logoColor=white)
 
-**Production-grade REST API powering a smart scheduling and business OS for mobile notaries in the United States.**
+**A domain-driven API for intelligent scheduling, profitability analysis, and business operations for mobile notaries.**
 
-[Architecture](#architecture) · [Features](#features) · [API Reference](#api-reference) · [Getting Started](#getting-started) · [Testing](#testing)
+[Capabilities](#what-the-api-provides) · [Architecture](#architecture) · [Business Logic](#core-business-logic) · [Setup](#local-development) · [Verification](#verification)
 
 </div>
 
 ---
 
-## What Is This?
+## Overview
 
-This is the backend for **Notary Day** — a SaaS product targeting full-time loan signing agents (LSAs) in the US. The product solves a scheduling problem no competitor has addressed: after every loan signing, notaries must spend 20–45 minutes scanning and electronically sending documents back to the title company (called a **scanback**). No existing tool accounts for this mandatory window when scheduling or accepting new jobs.
+Notary Day is an operations platform for mobile notaries and loan signing agents. This repository contains the NestJS API that turns a notary's schedule, travel time, scanback obligations, and business costs into practical decisions.
 
-The backend powers five core capabilities:
+The API is designed around a real operational constraint: after many loan signings, the notary must remain at the signing location to scan and return documents. That scanback window is treated as part of the appointment rather than an afterthought.
 
-1. **CITT Engine** ("Can I Take This?") — Given a prospective job's address, time, and type, instantly calculates: can the notary physically get there, what are their real net earnings after mileage, and does the scanback create a conflict with their next appointment. Delivers a verdict in < 3 seconds.
-2. **Route Optimisation** — Multi-stop geographic sequencing of a notary's confirmed jobs for the day, with automatic scanback time-blocking inserted after qualifying signing types.
-3. **Gap Finder** — Scans the notary's pending job queue and surfaces jobs that fit open windows in their confirmed schedule, ranked by net earnings.
-4. **Smart Booking Page** — Public availability engine that calculates which time slots a notary can genuinely accept, factoring in drive time from their previous appointment and scanback clearance. Clients only ever see slots the notary can actually take.
-5. **AI Job Import** — Processes forwarded confirmation emails and screenshots from 80+ signing platforms via OpenRouter API, extracts structured job data, and creates draft jobs for one-tap confirmation.
+## What the API Provides
 
----
+- **CITT, Can I Take This?** Calculates travel feasibility, scanback conflicts, net earnings, and effective hourly rate before a job is accepted.
+- **Job management** Supports manual jobs, imported jobs, booking requests, status transitions, profitability fields, and pagination.
+- **Smart planning** Produces a day view, route suggestions, scanback blocks, drive-time details, and gap opportunities.
+- **Public booking availability** Shows clients only the time slots a notary can genuinely accept without exposing private schedule data.
+- **Job import** Accepts inbound email and uploaded source material for asynchronous extraction into reviewable job data.
+- **Business operations** Includes invoices, expense tracking, earnings and mileage reporting, notarial journal entries, notifications, and email templates.
+- **Calendar integration** Supports Google Calendar connections and public ICS feeds.
+- **Subscription billing** Integrates Lemon Squeezy checkout, customer portal, cancellation, and webhook lifecycle events.
 
 ## Architecture
 
-### System Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         CLIENT (Next.js)                        │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │ HTTPS + JWT (Authorization: Bearer)
-┌─────────────────────────▼───────────────────────────────────────┐
-│                    NestJS API  (:3001)                          │
-│                                                                 │
-│   AuthGuard → PlanGuard → Controller → Service → Prisma       │
-│                                                                 │
-│   Modules: auth · users · jobs · citt · routing · planner      │
-│            booking · email-import · invoicing · billing        │
-│            reports · calendar · notifications                  │
-└──────┬──────────────┬───────────────────────┬───────────────────┘
-       │              │                       │
-┌──────▼──────┐ ┌─────▼──────┐ ┌─────────────▼───────────────────┐
-│ PostgreSQL  │ │   Upstash  │ │        BullMQ Workers           │
-│  (Prisma)   │ │   Redis    │ │                                 │
-│             │ │ Refresh Token│  email-import · screenshot      │
-│  14 models  │ │  Cache     │ │  invoice · notification        │
-│  migrations │ │  Queues    │ │  calendar-sync                 │
-│  relations  │ │            │ │                                 │
-└─────────────┘ └────────────┘ └─────────────────────────────────┘
-                                          │
-              ┌───────────────────────────┼─────────────────────┐
-              │                           │                     │
-    ┌─────────▼──────┐         ┌──────────▼──────┐  ┌──────────▼──────┐
-    │ OpenRouteService│         │  OpenRouter API │  │     Resend      │
-    │ (routing + ORS) │         │  (AI parsing)   │  │  (email + inbound)│
-    └─────────────────┘         └─────────────────┘  └─────────────────┘
-```
+The backend is organized as focused NestJS modules with dependency injection, shared infrastructure, and explicit domain boundaries.
 
-### Key Architectural Decisions
+| Layer | Implementation |
+| --- | --- |
+| API | NestJS 11 with TypeScript |
+| Authentication | JWT Bearer tokens with Passport and bcrypt password hashing |
+| Persistence | PostgreSQL with Prisma 7 and migrations |
+| Caching and queues | Redis through ioredis and BullMQ |
+| Geocoding and routing | Nominatim geocoding and OpenRouteService travel calculations |
+| AI extraction | OpenRouter with Zod validation before persistence |
+| Email | Resend for transactional and inbound email workflows |
+| File storage | Cloudflare R2 through the S3-compatible SDK |
+| Billing | Lemon Squeezy |
+| Documents and calendars | PDFKit and ical-generator |
+| Observability | Sentry and PostHog integrations |
+| API documentation | Swagger in development |
 
-**NestJS over Express** — The domain complexity of Notary Day (14 distinct bounded contexts, shared guards, cross-cutting concerns) justified the NestJS module system and dependency injection from the start. Each domain module is self-contained and testable in isolation.
+### Domain Modules
 
-**Worker Process Separation** — BullMQ workers run as a separate Node process (`main-worker.ts`) from the API server. A slow AI parsing job (up to 15 seconds) never blocks API response times. The API enqueues and forgets; the worker processes asynchronously and notifies via the notification module.
+The source tree includes modules for authentication, users, jobs, CITT, geocoding, planning, booking, job import, reports, calendar, notifications, billing, expenses, journal entries, invoices, email templates, analytics, and health checks.
 
-**Redis as the Performance Layer** — Nominatim (the geocoding API) enforces a strict 1 request/second rate limit. Without aggressive caching, a notary entering 10 job addresses would take 10+ seconds. All geocoded coordinates are cached in Redis with a 30-day TTL, targeting a >90% cache hit rate. Route optimisation results are cached per user per date (1-hour TTL), invalidated on any job mutation for that date.
+### API and Worker Processes
 
-**JWT-Based Auth** — For a mobile-first product where the same user may use multiple clients (PWA, mobile app shell), JWT provides a stateless, scalable authentication mechanism. Refresh tokens are stored in Redis for security and single-device enforcement if needed.
+The HTTP API and background workers have separate entry points. The API handles authenticated requests and enqueues long-running work. The worker process consumes BullMQ jobs for imports, invoice processing, notifications, and calendar synchronization. This keeps AI extraction and document generation away from request latency.
 
-**Zod Validation on AI Outputs** — All OpenRouter API responses are validated against a strict Zod schema before any database write. The AI is a data extraction tool, not a trusted source. If validation fails, a partial form is shown and the user completes the missing fields manually. The system never silently creates bad data from a malformed AI response.
+Redis is used for operational caching and queue coordination. The API can degrade gracefully when Redis is unavailable in development, while production requires a configured Redis connection.
 
----
+## Core Business Logic
 
-## Features
+### CITT Decision Engine
 
-### Core Domain Logic
+The CITT workflow combines several signals into one actionable result:
 
-#### CITT (Can I Take This?) Engine
+1. Resolve the prospective address through the geocoding service and cache.
+2. Select the previous confirmed appointment or the user's home base as the origin.
+3. Retrieve travel distance and duration through OpenRouteService.
+4. Calculate mileage cost, net earnings, total working time, and effective hourly earnings.
+5. Check whether signing and scanback time can be completed before the next anchored appointment.
+6. Return a `TAKE_IT`, `RISKY`, or `DECLINE` verdict with supporting details.
 
-The heart of the product. Given a prospective job, runs three parallel checks:
+The profitability model is intentionally transparent:
 
-```typescript
-// Simplified illustration of the core algorithm
-async runCITT(userId: string, dto: RunCITTDto): Promise<CITTResult> {
-  // 1. Geocode prospective address (Redis cache first)
-  const { lat, lng, distanceMiles } = await this.geocodingService.geocode(dto.address);
+- Net earnings = fee minus round-trip mileage cost minus platform fee.
+- Effective hourly rate = net earnings divided by drive, signing, and scanback time.
 
-  // 2. Get origin: last confirmed job or home base
-  const origin = await this.getOrigin(userId, dto.appointmentTime);
+### Planning and Availability
 
-  // 3. ORS drive time call
-  const { durationMins } = await this.orsService.getDriveTime(origin, { lat, lng });
-
-  // 4. Profitability calculation
-  const mileageCost = (distanceMiles * 2) * user.settings.irsRatePerMile;
-  const netEarnings = dto.fee - mileageCost - (dto.platformFee ?? 0);
-  const totalTimeHrs = (durationMins + signingMins + scanbackMins) / 60;
-  const effectiveHourly = netEarnings / totalTimeHrs;
-
-  // 5. Scanback conflict check
-  const conflict = await this.conflictService.checkScanbackConflict(
-    userId, dto.appointmentTime, signingMins, scanbackMins, durationMins
-  );
-
-  // 6. Verdict
-  return this.verdictService.calculate({ durationMins, netEarnings, conflict });
-}
-```
-
-**Verdict thresholds:**
-
-- `TAKE_IT` — Schedule fits (≥10 min buffer) AND net earnings ≥ $20
-- `RISKY` — Gap < 10 min buffer OR net earnings $10–$19
-- `DECLINE` — Schedule conflict OR net earnings < $10
-
-#### Route Optimisation Engine
-
-Accepts all confirmed jobs for a date, calls OpenRouteService's optimisation endpoint (which uses Vroom internally for TSP solving), respects all appointment times as hard constraints, then automatically inserts scanback time blocks after qualifying signing types.
-
-**Fallback chain:**
-
-1. ORS optimisation → cached result
-2. ORS unavailable → time-ordered sequence with cached drive times + "optimisation unavailable" banner
-3. No cached drive times → time-ordered sequence only
-
-#### Gap Finder
-
-Post-optimisation, scans pending jobs against each open window in the confirmed schedule:
-
-```
-gap_start    = job_A.end + job_A.scanback + 10min_buffer
-gap_end      = job_B.time - drive(gap_region → job_B) - 10min_buffer
-time_needed  = drive(job_A → candidate) + candidate.signing
-             + candidate.scanback + drive(candidate → job_B)
-
-Surface if: time_needed ≤ (gap_end - gap_start)
-Rank by:    net_earnings DESC
-```
-
-#### Booking Page Availability Engine
-
-Computes available slots for a given date without ever exposing the notary's actual schedule to the client:
-
-```
-earliest_start = prev_job.end
-               + prev_job.scanback_mins
-               + ORS(prev_job_address → booking_address)
-               + user.settings.bookingBufferMins
-
-slot_available = requested_time ≥ earliest_start
-              AND (booking_end + booking_scanback
-                   + ORS(booking → next_job)) ≤ next_job.appointment_time
-```
-
-### Infrastructure & Cross-Cutting Concerns
-
-**Global Exception Filter** — Catches all unhandled exceptions, logs with context, returns a consistent error envelope. NestJS's `HttpException` hierarchy maps to appropriate HTTP status codes. Unexpected errors return 500 with a sanitised message.
-
-**Transform Interceptor** — Wraps all successful responses in `{ data: ..., meta: { timestamp } }`. Pagination responses include `page`, `limit`, `total`, `totalPages`.
-
-**Rate Limiting** — `@nestjs/throttler` applied to all public endpoints: CITT (if called unauthenticated), booking page availability, and all auth routes. Configurable per-route via decorator.
-
-**CSRF Protection** — `csurf` middleware on all POST/PUT/DELETE routes. The booking page and email import webhook are explicitly excluded (they use HMAC signature verification instead).
-
-**Plan Guard** — `@RequiresPro()` decorator applies a guard that checks `req.user.plan` against `['PRO', 'PRO_ANNUAL']`. Returns 403 with a structured error the frontend uses to render the upgrade overlay. Never redirects.
-
----
-
-## Project Structure
-
-```
-src/
-├── main.ts                    # Bootstrap: helmet, session, CSRF, global pipes
-├── main-worker.ts             # Worker process entry point (separate from API)
-├── app.module.ts
-│
-├── config/
-│   ├── configuration.ts       # Config factory
-│   ├── validation.schema.ts   # Joi schema — all env vars validated at startup
-│   └── redis.config.ts        # ioredis factory (Upstash TLS)
-│
-├── common/
-│   ├── guards/
-│   │   ├── auth.guard.ts
-│   │   └── plan.guard.ts
-│   ├── decorators/
-│   │   ├── current-user.decorator.ts
-│   │   └── requires-pro.decorator.ts
-│   ├── filters/
-│   │   └── http-exception.filter.ts
-│   ├── interceptors/
-│   │   └── transform.interceptor.ts
-│   └── pipes/
-│       └── zod-validation.pipe.ts
-│
-├── modules/
-│   ├── auth/                  # Register, login, logout, password reset
-│   ├── users/                 # Profile, settings, signing type defaults
-│   ├── jobs/                  # CRUD, status machine, 4 entry methods
-│   ├── citt/                  # CITT engine (ORS + profitability + conflict)
-│   ├── geocoding/             # Nominatim + Redis cache (shared service)
-│   ├── routing/               # ORS multi-stop, scanback blocking, fallback
-│   ├── planner/               # Today view, gap finder
-│   ├── booking/               # Public availability engine
-│   ├── email-import/          # Resend inbound → BullMQ → OpenRouter
-│   ├── screenshot-import/     # R2 upload → BullMQ → OpenRouter vision
-│   ├── invoicing/             # PDF generation, Resend send, mark-paid
-│   ├── reports/               # Earnings, mileage, journal, tax export
-│   ├── calendar/              # Google OAuth, .ics feed generation
-│   ├── notifications/         # @nestjs/schedule crons + Resend
-│   └── billing/               # Lemon Squeezy subscription lifecycle
-│
-├── queues/
-│   ├── queue.constants.ts
-│   └── queue.module.ts
-│
-└── workers/
-    ├── email-import.processor.ts
-    ├── screenshot-import.processor.ts
-    ├── invoice.processor.ts
-    └── notification.processor.ts
-```
-
----
-
-## Database Schema
-
-14 models across 3 concern layers. Full schema at `prisma/schema.prisma`.
-
-**User & Settings Layer**
-
-- `User` — authentication, plan tier, onboarding state, profile
-- `UserSettings` — home base, IRS rate, booking page config, notification prefs, payment info
-- `SigningTypeDefault` — per-user duration overrides for each of 6 signing types
-
-**Core Operations Layer**
-
-- `Job` — the central entity. 14 status values, 6 signing types, 5 source types. Stores computed profitability fields (net_earnings, effective_hourly) after route calculation. Compound indexes on `(user_id, appointment_time, status)` for Today view queries.
-- `Booking` — client-submitted booking requests. Drives the `pending_review` → `confirmed` | `declined` flow.
-- `EmailImport` — raw email + AI parse results + import status. Retained for debugging and duplicate detection.
-
-**Business Operations Layer**
-
-- `Invoice` — generated PDFs, payment tracking, mark-paid
-- `Expense` — categorised business expenses with receipt storage
-- `JournalEntry` — notarial journal (IRS-compliant act logging)
-- `CalendarConnection` — Google OAuth tokens (encrypted at rest)
-- `LemonSqueezyEvent` — idempotent webhook event log (prevents duplicate processing)
-- `Notification` — in-app notification store
-- `PasswordResetToken` — hashed, single-use, 1-hour expiry
-- `GeocodeCache` — DB-layer geocode cache (Redis primary, this is warm-up and fallback)
-
-**Enums:** `SigningType` (6 values) · `JobStatus` (8 values) · `JobSource` (5 values) · `PlanTier` (4 values) · `BookingStatus` (4 values) · `NotificationType` (9 values) · `ExpenseCategory` (8 values) · `ImportStatus` (5 values)
-
----
-
-## API Reference
-
-All endpoints prefixed `/api/v1/`. Full list of 45+ endpoints across 12 domains.
-
-### Auth
-
-```
-POST   /auth/register
-POST   /auth/login
-POST   /auth/logout
-POST   /auth/forgot-password
-POST   /auth/reset-password
-GET    /auth/me                 # Get current authenticated user details
-```
-
-### CITT
-
-```
-POST   /citt/check              # Free tier — unlimited. The core acquisition hook.
-```
-
-### Jobs
-
-```
-GET    /jobs                    # ?date, ?status, ?page, ?limit
-POST   /jobs
-GET    /jobs/:id
-PATCH  /jobs/:id
-DELETE /jobs/:id
-PATCH  /jobs/:id/status         # Status machine transitions
-POST   /jobs/:id/invoice        # Pro — trigger invoice generation
-```
-
-### Smart Day Planner (Pro)
-
-```
-GET    /planner/today           # ?date — optimised sequence + scanback blocks + gap candidates
-POST   /planner/optimise        # Trigger ORS optimisation for a date
-GET    /planner/gaps            # ?date — gap finder results
-```
-
-### Public Booking Page
-
-```
-GET    /book/:username/slots    # ?date — available slots (no auth)
-POST   /book/:username/request  # Submit booking (no auth)
-```
-
-### Billing
-
-```
-POST   /billing/subscribe       # Returns Lemon Squeezy checkout URL
-POST   /billing/cancel
-GET    /billing/portal          # Returns Lemon Squeezy customer portal URL
-POST   /billing/webhook         # Lemon Squeezy webhook (HMAC verified)
-```
-
-### Response Envelope
-
-```json
-{
-  "data": {},
-  "meta": { "timestamp": "2026-04-15T10:00:00Z" }
-}
-```
-
-```json
-{
-  "error": {
-    "code": "PLAN_REQUIRED",
-    "message": "This feature requires a Pro subscription",
-    "statusCode": 403,
-    "timestamp": "2026-04-15T10:00:00Z"
-  }
-}
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- PostgreSQL 16+
-- An [Upstash](https://upstash.com) Redis database (free tier)
-- An [OpenRouteService](https://openrouteservice.org) API key (free)
-- A [Resend](https://resend.com) account (free tier)
-- An [OpenRouter](https://openrouter.ai) API key (free models available)
-- A [Lemon Squeezy](https://lemonsqueezy.com) store
-
-### Installation
-
-```bash
-# From the repo root
-npm install
-
-# Generate Prisma client
-npx prisma generate
-
-# Run database migrations
-npx prisma migrate dev --name init
-
-# Seed signing type defaults
-npx prisma db seed
-```
-
-### Environment Variables
-
-Copy `.env.example` to `.env` and fill in all values. All variables are validated at startup via Joi — the server will refuse to start with a descriptive error if any required variable is missing.
-
-```bash
-cp .env.example .env
-```
-
-Key variables:
-
-```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/notaryday
-UPSTASH_REDIS_URL=rediss://...          # TLS URL from Upstash dashboard
-JWT_SECRET=...                       # Random 64-char string
-JWT_EXPIRES_IN=...                   # JWT expiration time
-ORS_API_KEY=...
-OPENROUTER_API_KEY=...
-OPENROUTER_DEFAULT_MODEL=mistralai/mistral-7b-instruct:free
-RESEND_API_KEY=...
-LEMONSQUEEZY_API_KEY=...
-LEMONSQUEEZY_WEBHOOK_SECRET=...
-APP_URL=http://localhost:3000
-NODE_ENV=development
-PORT=3001
-```
-
-### Running
-
-```bash
-# Start PostgreSQL (Docker)
-docker-compose up -d
-
-# Development — API server
-npm run start:dev:api
-
-# Development — Worker process (separate terminal)
-npm run start:dev:worker
-
-# Production
-npm run build
-npm run start:api
-npm run start:worker
-```
-
----
-
-## Testing
-
-```bash
-# Unit tests
-npm run test
-
-# Unit tests with coverage
-npm run test:cov
-
-# E2E tests
-npm run test:e2e
-```
-
-### Test Strategy
-
-Unit tests cover all service methods containing business logic. External dependencies (ORS, Nominatim, OpenRouter, Resend, Lemon Squeezy) are fully mocked — no real API calls in the test suite.
-
-**Critical test coverage targets:**
-
-- `citt.service` — All verdict permutations (Take It / Risky / Decline), scanback conflict edge cases, ORS failure fallback
-- `routing.service` — Multi-stop sequencing, hard constraint respect, scanback block insertion, ORS fallback
-- `planner.service` (gap finder) — Gap window calculation, candidate ranking, empty schedule edge case
-- `booking.service` (availability engine) — Slot availability with and without prior jobs, scanback clearance, buffer enforcement
-
-Coverage target: 80%+ on the four modules above.
-
----
-
-## Performance
-
-| Operation                | Target | Strategy                                 |
-| ------------------------ | ------ | ---------------------------------------- |
-| CITT response            | < 3s   | Redis geocode cache + ORS p95 latency    |
-| Route optimisation       | < 3s   | Redis route cache (1hr TTL) + ORS        |
-| Booking slot calculation | < 2s   | Redis slot cache (2min TTL)              |
-| Email import parse       | < 15s  | Async BullMQ worker — does not block API |
-| Geocoding cache hit rate | > 90%  | 30-day Redis TTL + DB fallback           |
-| Page load (4G)           | < 2.5s | Lean response payloads, no N+1 queries   |
-
----
-
-## Security
-
-- **Passwords** — bcrypt, minimum 12 salt rounds
-- **JWT Auth** — Stateless authentication using JSON Web Tokens. Access tokens are short-lived, while refresh tokens are stored in Upstash Redis and rotated upon use.
-- **CSRF** — csurf middleware on all state-mutating routes
-- **Helmet** — Security headers on all responses
-- **Input validation** — class-validator + class-transformer on all DTOs. Whitelist mode: unknown fields stripped automatically.
-- **AI output validation** — Zod schema on all OpenRouter responses before DB write
-- **Webhook verification** — HMAC signature check on Lemon Squeezy and Resend inbound webhooks
-- **Env validation** — Joi schema at startup. Missing variables crash the process with a clear error message rather than failing silently at runtime.
-- **Booking page privacy** — The availability engine never exposes job addresses, client names, or schedule details. Clients see only boolean slot availability.
-- **Rate limiting** — @nestjs/throttler on all public-facing endpoints
-- **Password reset tokens** — UUID, hashed before storage, 1-hour expiry, single-use
-
----
-
-## Tech Stack
-
-| Layer            | Technology                           | Version |
-| ---------------- | ------------------------------------ | ------- |
-| Runtime          | Node.js                              | 20 LTS  |
-| Framework        | NestJS                               | 10      |
-| Language         | TypeScript                           | 5       |
-| Database         | PostgreSQL                           | 16      |
-| ORM              | Prisma                               | 5       |
-| Cache / Sessions | Redis (Upstash) via ioredis          | 5       |
-| Queue            | BullMQ                               | 5       |
-| Auth             | Passport.js (Local + JWT)            | —       |
-| Routing API      | OpenRouteService                     | v2      |
-| Geocoding        | Nominatim (OSM)                      | —       |
-| AI Parsing       | OpenRouter API                       | —       |
-| Email            | Resend                               | —       |
-| File Storage     | Cloudflare R2 (S3-compatible)        | —       |
-| Billing          | Lemon Squeezy                        | —       |
-| PDF Generation   | pdfkit                               | —       |
-| Calendar         | Google Calendar API + ical-generator | —       |
-| Validation       | class-validator + Zod                | —       |
-| Security         | helmet + csurf + bcrypt              | —       |
-| Testing          | Jest                                 | 29      |
-
----
-
-## Deployment
-
-Designed for deployment on **Railway** or **Render**. Both support:
-
-- Multiple services from a single repo (API process + Worker process)
-- PostgreSQL managed database
-- Automatic deploys from GitHub
-- Environment variable management
-
-The API and worker are deployed as separate services pointing at the same database and Upstash Redis instance. No additional infrastructure required.
-
----
-
-<div align="center">
-  <sub>Built by <a href="https://github.com/Dev-folabi">Yusuf Afolabi</a> · notaryday.app</sub>
-</div>
+Confirmed jobs retain their appointment times as hard constraints. The planner accounts for travel between jobs, signing duration, scanback duration, and configurable buffers. When route optimization is unavailable, the backend can return a time-ordered fallback with an explicit degraded result.
+
+The public booking engine applies the same constraints without revealing private appointments, addresses, client names, or route details.
+
+### Asynchronous Import Processing
+
+Inbound job information is queued for processing rather than parsed during the HTTP request. OpenRouter output is validated with Zod before it can become job data. Invalid or incomplete extraction results remain reviewable so the user can correct them manually.
+
+## API Conventions
+
+All routes are prefixed with `/api/v1`.
+
+- Authenticated routes use the `Authorization: Bearer <token>` header.
+- Public routes explicitly opt out of the global authentication guard.
+- Successful responses use a consistent `{ success, data, meta }` envelope.
+- Errors use `{ success: false, error }` with a stable status code and message.
+- DTOs are validated and unknown input is rejected or stripped according to the endpoint contract.
+- Pagination metadata includes the current page, limit, total, and total pages where applicable.
+- Pro-only functionality is enforced through feature guards and structured errors. Data is not deleted or hidden when a plan changes.
+
+## Repository Layout
+
+Important backend directories include:
+
+- `src/modules`: domain modules and controllers
+- `src/common`: guards, decorators, filters, interceptors, pipes, and shared services
+- `src/config`: environment, Redis, and Prisma configuration
+- `src/queues`: BullMQ registration and queue constants
+- `src/workers`: background processors
+- `prisma`: schema, migrations, and seed data
+- `generated`: Prisma client output used by the build process
+
+## Requirements
+
+- Node.js 20 or newer
+- PostgreSQL
+- Redis 7 or a compatible Redis service
+- API credentials for the external services used by the features you enable
+
+The main integrations are OpenRouteService, OpenRouter, Resend, Cloudflare R2, Google Calendar, and Lemon Squeezy. Environment variables are validated with Joi during startup. Review `.env.example` for the complete configuration surface.
+
+## Local Development
+
+From this repository:
+
+1. Install dependencies with `npm install`.
+2. Create `.env` from `.env.example` and provide the required values.
+3. Generate the Prisma client with `npx prisma generate`.
+4. Apply migrations with `npx prisma migrate dev`.
+5. Seed default signing type data with `npx prisma db seed`.
+6. Start the API with `npm run start:dev`.
+7. Start the worker in a second terminal with `npm run start:dev:worker` when using import, invoice, notification, or calendar jobs.
+
+The API runs on port `4000` by default. Swagger is available at `/docs` in development.
+
+### Docker Compose
+
+The included Compose configuration runs Redis, the Prisma migration job, the API, and the worker. PostgreSQL is intentionally external so the same setup can use Neon in staging or production.
+
+1. Create `.env` from `.env.example` and set the Neon `DATABASE_URL` and required application credentials.
+2. Start the stack with `docker compose up --build`.
+3. Check the API at `http://localhost:4000/api/v1/health`.
+4. Stop the stack with `docker compose down`.
+
+Compose keeps Redis on the internal Docker network and persists it in the `redis-data` volume. It overrides `REDIS_URL` with `redis://redis:6379` for the API, worker, and migration service.
+
+For a production-style local run, use `npm run build`, then run `npm run start:prod` for the API and `npm run start:worker` for background processing.
+
+## Verification
+
+- `npm run lint` runs ESLint with automatic fixes.
+- `npm test` runs the Jest suite.
+- `npm run test:cov` generates coverage output.
+- `npm run test:e2e` runs end-to-end tests.
+- `npm run build` generates Prisma artifacts, compiles NestJS, and copies runtime assets into `dist`.
+
+Tests isolate external services such as OpenRouteService, Nominatim, OpenRouter, Resend, and Lemon Squeezy. The highest-value scenarios cover CITT verdicts, profitability, scanback conflicts, planner behavior, public booking availability, and worker-driven workflows.
+
+## Continuous Integration and Images
+
+GitHub Actions verifies pull requests and pushes with Prisma generation, ESLint, Jest, and the production build. Only a push to `main` publishes a Docker image to GitHub Container Registry.
+
+The published image is `ghcr.io/dev-folabi/notaryday_backend`. Each successful `main` build publishes `latest` and an immutable `sha-<commit>` tag. The workflow does not deploy directly to the DigitalOcean Droplet.
+
+The production Droplet should provide a local Redis container and pull the image from GHCR. Neon remains the PostgreSQL provider. Store the Droplet's runtime configuration in a local `.env`, set `REDIS_URL=redis://redis:6379` for the Compose network, and use the immutable commit tag when a rollback-safe release is required.
+
+## Engineering Highlights
+
+- Domain logic is isolated in testable NestJS services.
+- Prisma provides typed persistence and migration history.
+- Redis caching reduces repeated geocoding and route requests.
+- BullMQ separates slow or retryable work from the request path.
+- AI extraction is treated as untrusted input and validated before database writes.
+- Public booking responses preserve schedule privacy by returning availability rather than internal calendar data.
+- Global response and exception handling gives the frontend a predictable API contract.
+
+## License
+
+This project is private and not licensed for redistribution.
+
+Built by [Yusuf Afolabi](https://github.com/Dev-folabi) for [notaryday.app](https://notaryday.app).

@@ -6,6 +6,10 @@ import { RedisService } from '../../config/redis.service';
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
+  private cachedRedis: 'up' | 'down' | null = null;
+  private cachedAt = 0;
+  private static readonly CACHE_TTL_MS = 30_000;
+
   constructor(private readonly redis: RedisService) {}
 
   @Get()
@@ -23,21 +27,29 @@ export class HealthController {
     },
   })
   async check() {
-    // Best-effort Redis probe. Always return 200 so an infrastructure
-    // health-check never restarts the app just because Redis is down.
     let redis: 'up' | 'down' = 'up';
-    try {
-      await Promise.race([
-        this.redis.ping(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('redis ping timed out after 3s')),
-            3000,
+    const now = Date.now();
+    if (
+      this.cachedRedis &&
+      now - this.cachedAt < HealthController.CACHE_TTL_MS
+    ) {
+      redis = this.cachedRedis;
+    } else {
+      try {
+        await Promise.race([
+          this.redis.ping(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error('redis ping timed out after 3s')),
+              3000,
+            ),
           ),
-        ),
-      ]);
-    } catch {
-      redis = 'down';
+        ]);
+      } catch {
+        redis = 'down';
+      }
+      this.cachedRedis = redis;
+      this.cachedAt = now;
     }
     return { status: 'ok', redis, timestamp: new Date().toISOString() };
   }

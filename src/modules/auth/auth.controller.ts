@@ -45,6 +45,11 @@ class RegisterDto {
   @IsOptional()
   @IsString()
   fullName?: string;
+
+  @ApiPropertyOptional({ example: 'California' })
+  @IsOptional()
+  @IsString()
+  state?: string;
 }
 
 class LoginDto {

@@ -124,7 +124,15 @@ export class CalendarService {
         grant_type: 'authorization_code',
       }),
     });
-    const tokens = (await res.json()) as Prisma.InputJsonObject;
+    const body = (await res.json()) as Record<string, unknown>;
+    if (!res.ok) {
+      throw new Error(
+        typeof body.error_description === 'string'
+          ? body.error_description
+          : `Google token exchange failed with status ${res.status}`,
+      );
+    }
+    const tokens = this.normalizeGoogleTokens(body);
 
     await this.prisma.userSettings.update({
       where: { user_id: userId },
@@ -135,5 +143,169 @@ export class CalendarService {
     });
 
     return { connected: true };
+  }
+
+  async getValidGoogleAccessToken(
+    userId: string,
+    forceRefresh = false,
+  ): Promise<string> {
+    const settings = await this.prisma.userSettings.findUnique({
+      where: { user_id: userId },
+      select: {
+        google_calendar_connected: true,
+        google_calendar_token: true,
+      },
+    });
+    if (
+      !settings?.google_calendar_connected ||
+      !settings.google_calendar_token
+    ) {
+      throw new Error('Google Calendar is not connected');
+    }
+
+    const tokens = this.normalizeGoogleTokens(
+      settings.google_calendar_token as Record<string, unknown>,
+    );
+    const expiresAt = Number(tokens.expires_at ?? 0);
+    if (
+      !forceRefresh &&
+      typeof tokens.access_token === 'string' &&
+      expiresAt > Date.now() + 60_000
+    ) {
+      return tokens.access_token;
+    }
+
+    return this.refreshGoogleAccessToken(userId, tokens);
+  }
+
+  private normalizeGoogleTokens(
+    raw: Record<string, unknown>,
+    previous?: Record<string, unknown>,
+  ): Prisma.InputJsonObject {
+    const expiresIn = Number(raw.expires_in ?? 0);
+    const rawExpiresAt = raw.expires_at ?? raw.expiry;
+    const expiresAt =
+      expiresIn > 0 ? Date.now() + expiresIn * 1000 : Number(rawExpiresAt ?? 0);
+
+    const normalized: Record<string, unknown> = {
+      ...previous,
+      ...raw,
+      expires_at: expiresAt,
+      error: null,
+    };
+    const accessToken =
+      typeof raw.access_token === 'string'
+        ? raw.access_token
+        : previous?.access_token;
+    const refreshToken =
+      typeof raw.refresh_token === 'string' && raw.refresh_token
+        ? raw.refresh_token
+        : previous?.refresh_token;
+    if (typeof accessToken === 'string') normalized.access_token = accessToken;
+    if (typeof refreshToken === 'string') {
+      normalized.refresh_token = refreshToken;
+    }
+    return normalized as Prisma.InputJsonObject;
+  }
+
+  private async refreshGoogleAccessToken(
+    userId: string,
+    tokens: Prisma.InputJsonObject,
+  ): Promise<string> {
+    const redis = this.redis.getClient();
+    const lockKey = `calendar-refresh:${userId}`;
+    const lockValue = crypto.randomUUID();
+    const acquired = await redis.set(lockKey, lockValue, 'PX', 15_000, 'NX');
+
+    if (!acquired) {
+      for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const current = await this.prisma.userSettings.findUnique({
+          where: { user_id: userId },
+          select: {
+            google_calendar_connected: true,
+            google_calendar_token: true,
+          },
+        });
+        if (!current?.google_calendar_connected) {
+          throw new Error('Google Calendar is not connected');
+        }
+        const currentTokens = this.normalizeGoogleTokens(
+          current.google_calendar_token as Record<string, unknown>,
+        );
+        if (
+          typeof currentTokens.access_token === 'string' &&
+          Number(currentTokens.expires_at ?? 0) > Date.now() + 60_000
+        ) {
+          return currentTokens.access_token;
+        }
+      }
+      throw new Error('Google token refresh is already in progress');
+    }
+
+    try {
+      const refreshToken = tokens.refresh_token;
+      if (typeof refreshToken !== 'string' || !refreshToken) {
+        await this.disconnectGoogleCalendar(
+          userId,
+          tokens,
+          'Missing refresh token',
+        );
+        throw new Error('Missing Google refresh token');
+      }
+
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: this.config.get<string>('GOOGLE_CLIENT_ID') ?? '',
+          client_secret: this.config.get<string>('GOOGLE_CLIENT_SECRET') ?? '',
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }),
+      });
+      const body = (await response.json()) as Record<string, unknown>;
+      if (!response.ok) {
+        const errorCode = typeof body.error === 'string' ? body.error : null;
+        const message =
+          typeof body.error_description === 'string'
+            ? body.error_description
+            : `Google token refresh failed with status ${response.status}`;
+        if (errorCode === 'invalid_grant') {
+          await this.disconnectGoogleCalendar(userId, tokens, message);
+        }
+        throw new Error(message);
+      }
+
+      const normalized = this.normalizeGoogleTokens(body, tokens);
+      await this.prisma.userSettings.update({
+        where: { user_id: userId },
+        data: { google_calendar_token: normalized },
+      });
+      return normalized.access_token as string;
+    } finally {
+      await redis
+        .eval(
+          'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end',
+          1,
+          lockKey,
+          lockValue,
+        )
+        .catch(() => undefined);
+    }
+  }
+
+  private async disconnectGoogleCalendar(
+    userId: string,
+    tokens: Prisma.InputJsonObject,
+    error: string,
+  ) {
+    await this.prisma.userSettings.update({
+      where: { user_id: userId },
+      data: {
+        google_calendar_connected: false,
+        google_calendar_token: { ...tokens, error },
+      },
+    });
   }
 }

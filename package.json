@@ -7,11 +7,15 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "prisma generate && nest build && cp -r generated dist/ && mkdir -p dist/src/common/email && cp -r src/common/email/assets dist/src/common/email/",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/src/main",
+    "start:dev:api": "nest start --watch",
+    "start:staging": "concurrently \"node dist/src/main\" \"node dist/src/main-worker\"",
+    "start:staging:dev": "concurrently \"nest start --watch\" \"ts-node -r tsconfig-paths/register src/main-worker.ts\"",
+    "start:worker": "node dist/src/main-worker",
+    "start:dev:worker": "ts-node -r tsconfig-paths/register src/main-worker.ts",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -35,12 +39,14 @@
     "@nestjs/throttler": "^6.5.0",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.6.0",
+    "@sentry/nestjs": "^10.70.0",
     "@types/web-push": "^3.6.4",
     "axios": "^1.14.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.73.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "concurrently": "^10.0.5",
     "connect-redis": "^9.0.0",
     "dotenv": "^17.4.1",
     "express-session": "^1.19.0",
@@ -52,6 +58,8 @@
     "passport-local": "^1.0.0",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
+    "posthog-node": "^5.49.1",
+    "prisma": "^7.6.0",
     "reflect-metadata": "^0.2.2",
     "resend": "^6.12.0",
     "rxjs": "^7.8.1",
@@ -81,7 +89,6 @@
     "globals": "^16.0.0",
     "jest": "^30.0.0",
     "prettier": "^3.4.2",
-    "prisma": "^7.6.0",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
@@ -100,7 +107,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.ts$": "ts-jest"
     },
     "moduleNameMapper": {
       "^generated/prisma$": "<rootDir>/../generated/prisma"

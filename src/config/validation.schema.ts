@@ -5,7 +5,7 @@ export const validationSchema = Joi.object({
   DATABASE_URL: Joi.string().required(),
 
   // Redis
-  UPSTASH_REDIS_URL: Joi.string().required(),
+  REDIS_URL: Joi.string().uri().required(),
 
   // JWT
   JWT_SECRET: Joi.string().min(32).required(),
@@ -52,6 +52,7 @@ export const validationSchema = Joi.object({
 
   // App
   APP_URL: Joi.string().default('http://localhost:4000'),
+  CORS_ORIGINS: Joi.string().allow('').default(''),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'staging')
     .default('development'),
@@ -61,10 +62,28 @@ export const validationSchema = Joi.object({
   THROTTLER_TTL: Joi.number().default(60000),
   THROTTLER_LIMIT: Joi.number().default(100),
 
+  // Bot blocking (blacklist-based)
+  BOT_BLOCK_ENABLED: Joi.string().default('true'),
+  BOT_BLOCK_MODE: Joi.string().valid('DRY_RUN', 'LIVE').default('LIVE'),
+  BOT_BLOCK_REQUIRE_UA: Joi.string().default('true'),
+  BOT_BLOCK_EXTRA_UA: Joi.string().allow('').default(''),
+
+  // Sentry
+  SENTRY_DSN: Joi.string().allow('').default(''),
+  SENTRY_ENVIRONMENT: Joi.string().allow('').default(''),
+  SENTRY_RELEASE: Joi.string().allow('').default(''),
+  SENTRY_TRACES_SAMPLE_RATE: Joi.number().min(0).max(1).default(0),
+
+  // PostHog
+  POSTHOG_API_KEY: Joi.string().allow('').default(''),
+  POSTHOG_HOST: Joi.string().allow('').default('https://us.i.posthog.com'),
+  POSTHOG_ENABLED: Joi.boolean().default(false),
+
   // Application Defaults
   IRS_RATE_PER_MILE: Joi.number().default(0.725),
 
   // New-account Pro trial (feature-flag gated)
   TRIAL_PLAN: Joi.boolean().default(false),
   TRIAL_DAYS: Joi.number().integer().min(1).default(30),
+  SOFT_DELETE_RETENTION_DAYS: Joi.number().integer().min(1).default(90),
 });

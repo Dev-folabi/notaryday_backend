@@ -453,8 +453,7 @@ model Invoice {
   job_id  String @unique
   job     Job    @relation(fields: [job_id], references: [id], onDelete: Cascade)
 
-  // Invoice details
-  invoice_number  String  @unique // e.g. "INV-2026-0042"
+  invoice_number  String
   recipient_email String // Signing service or client email
   recipient_name  String?
 
@@ -470,6 +469,10 @@ model Invoice {
 
   pdf_pending   Boolean @default(false)
   email_pending Boolean @default(false)
+  email_attempts        Int       @default(0)
+  email_last_attempt_at DateTime? @db.Timestamptz
+  email_last_error      String?   @db.Text
+  email_failed_at       DateTime? @db.Timestamptz
 
   // Status
   sent_at DateTime? @db.Timestamptz
@@ -483,7 +486,9 @@ model Invoice {
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
+  @@unique([user_id, invoice_number])
   @@index([user_id, created_at])
+  @@index([email_pending, email_attempts])
   @@map("invoices")
 }
 

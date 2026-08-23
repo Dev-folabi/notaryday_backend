@@ -5,12 +5,15 @@
  */
 export function sanitizeText(value: unknown, maxLength = 500): unknown {
   if (typeof value !== 'string') return value;
-  return value
-    .replace(/<[^>]*>/g, '')
-    .replace(/[\u0000-\u001F\u007F]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLength);
+  return (
+    value
+      .replace(/<[^>]*>/g, '')
+      // eslint-disable-next-line no-control-regex -- stripping control chars is the point
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, maxLength)
+  );
 }
 
 /**

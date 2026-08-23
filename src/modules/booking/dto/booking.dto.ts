@@ -8,6 +8,7 @@ import {
   Min,
   MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SigningType } from '../../../../generated/prisma';
 
@@ -85,6 +86,9 @@ export class GetSlotsQueryDto {
   date: string;
 
   @ApiPropertyOptional({ enum: SigningType })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? (value.toUpperCase() as SigningType) : value,
+  )
   @IsEnum(SigningType)
   @IsOptional()
   service_type?: SigningType;
@@ -106,6 +110,9 @@ export class GetAlternativesQueryDto {
   time: string;
 
   @ApiPropertyOptional({ enum: SigningType })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? (value.toUpperCase() as SigningType) : value,
+  )
   @IsEnum(SigningType)
   @IsOptional()
   service_type?: SigningType;

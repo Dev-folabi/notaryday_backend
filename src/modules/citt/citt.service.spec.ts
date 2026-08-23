@@ -6,6 +6,7 @@ import { GeocodingService } from '../geocoding/geocoding.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { JobsService } from '../jobs/jobs.service';
 import { OrsService } from '../../common/services/ors.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 describe('CittService', () => {
   let service: CittService;
@@ -27,6 +28,7 @@ describe('CittService', () => {
               .mockResolvedValue({ distanceMiles: 5, driveTimeMins: 12 }),
           },
         },
+        { provide: AnalyticsService, useValue: { track: jest.fn() } },
       ],
     }).compile();
 

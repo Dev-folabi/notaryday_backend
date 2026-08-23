@@ -11,6 +11,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailTemplatesService } from '../email-templates/email-templates.service';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { CreateBookingDto, DeclineBookingDto } from './dto/booking.dto';
 import {
   BookingStatus,
@@ -101,6 +102,7 @@ export class BookingService {
     private readonly notifications: NotificationsService,
     private readonly emailTemplates: EmailTemplatesService,
     private readonly emailRenderer: EmailRendererService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   /** Public: create a booking request */
@@ -250,6 +252,11 @@ export class BookingService {
         tag: `booking-${booking.id}`,
       });
     }
+
+    this.analytics.track('booking_requested', notary.id, {
+      service_type: booking.service_type,
+      status: booking.status,
+    });
 
     return booking;
   }
@@ -442,6 +449,10 @@ export class BookingService {
         tag: `booking-confirmed-${booking.id}`,
       });
     }
+
+    this.analytics.track('booking_approved', notaryId, {
+      service_type: booking.service_type,
+    });
 
     return { booking: { ...booking, status: BookingStatus.CONFIRMED }, job };
   }
@@ -825,6 +836,44 @@ export class BookingService {
     const settings = await this.userSettings.get(notary.id);
     if (!settings.booking_page_enabled) return { slots: [], notary: null };
 
+    const slots = await this.computeSlots(
+      notary.id,
+      settings,
+      date,
+      serviceType ?? SigningType.GENERAL,
+    );
+
+    return { slots, notary: this.publicNotaryInfo(notary, settings) };
+  }
+
+  /**
+   * Owner preview: identical slot computation to the public page but skips the
+   * plan and booking_page_enabled gates, so the notary can always preview how
+   * their own page looks (used by /booking-preview). No bookings can be
+   * created through it.
+   */
+  async getSlotsForOwner(
+    userId: string,
+    date: string,
+    serviceType?: SigningType,
+  ): Promise<{
+    slots: { time: string; iso: string }[];
+    notary: {
+      full_name: string | null;
+      username: string;
+      bio: string | null;
+      service_area_miles: number | null;
+      services: BookingServiceConfig[];
+      active_hours: Record<string, { start?: string; end?: string }> | null;
+      min_notice_hours: number | null;
+      timezone: string | null;
+      timezone_abbr: string | null;
+    };
+  }> {
+    const notary = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!notary) throw new NotFoundException('Notary not found');
+
+    const settings = await this.userSettings.get(notary.id);
     const slots = await this.computeSlots(
       notary.id,
       settings,

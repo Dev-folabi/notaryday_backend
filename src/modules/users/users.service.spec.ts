@@ -115,10 +115,11 @@ describe('UsersService account management', () => {
       service = module.get<UsersService>(UsersService);
     });
 
-    it('grants a Pro trial when TRIAL_PLAN=true', async () => {
+    it('grants a Pro trial when TRIAL_PLAN is the boolean true (Joi-coerced env)', async () => {
       config.get.mockImplementation((key: string) => {
         if (key === 'IRS_RATE_PER_MILE') return 0.725;
-        if (key === 'TRIAL_PLAN') return 'true';
+        // The real ConfigService returns a boolean after Joi validation
+        if (key === 'TRIAL_PLAN') return true;
         if (key === 'TRIAL_DAYS') return 30;
         return undefined;
       });
@@ -140,6 +141,27 @@ describe('UsersService account management', () => {
       expect(
         Math.abs(arg.data.plan_expires_at.getTime() - expected),
       ).toBeLessThan(5000);
+    });
+
+    it('does not grant a trial when TRIAL_PLAN is the env string "false"', async () => {
+      config.get.mockImplementation((key: string) => {
+        if (key === 'IRS_RATE_PER_MILE') return 0.725;
+        if (key === 'TRIAL_PLAN') return false;
+        return undefined;
+      });
+      createMock.mockResolvedValue({ id: 'u1' });
+
+      await service.create({
+        email: 'a@b.com',
+        password: 'secret123',
+        username: 'ab',
+      });
+
+      const calls = createMock.mock.calls as unknown as [
+        { data: Record<string, unknown> },
+      ][];
+      const arg = calls[0][0];
+      expect(arg.data.plan).toBeUndefined();
     });
 
     it('creates a FREE account when TRIAL_PLAN is off', async () => {
