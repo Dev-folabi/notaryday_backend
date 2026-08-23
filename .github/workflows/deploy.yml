@@ -57,6 +57,7 @@ jobs:
           script: |
             cd /opt/notaryday
             docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml run --rm notaryday-api npx prisma migrate deploy
+            source .env
+            docker compose -f docker-compose.prod.yml run --rm -e DATABASE_URL="$DATABASE_URL" notaryday-api npx prisma migrate deploy
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f
