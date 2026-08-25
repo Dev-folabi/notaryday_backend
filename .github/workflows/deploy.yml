@@ -1,4 +1,4 @@
-name: Build & Deploy
+name: CI → Build → Deploy
 
 on:
   push:
@@ -8,9 +8,48 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+concurrency:
+  group: backend-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-push:
+  #  1. Verify
+  verify:
+    name: Verify backend
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npx eslint "{src,apps,libs,test}/**/*.ts"
+
+      - name: Run tests
+        run: npm test -- --runInBand
+
+      - name: Build application
+        run: npm run build
+
+  #  2. Build & push Docker image
+  build-and-push:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    needs: verify
     permissions:
       contents: read
       packages: write
@@ -43,9 +82,13 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  # 3. Deploy to VPS
   deploy:
+    name: Deploy to VPS
     runs-on: ubuntu-latest
     needs: build-and-push
+    permissions:
+      contents: read
 
     steps:
       - name: Deploy to VPS via SSH
@@ -58,6 +101,8 @@ jobs:
             cd /opt/notaryday
             docker compose -f docker-compose.prod.yml pull
             source .env
-            docker compose -f docker-compose.prod.yml run --rm -e DATABASE_URL="$DATABASE_URL" notaryday-api npx prisma migrate deploy
+            docker compose -f docker-compose.prod.yml run --rm \
+              -e DATABASE_URL="$DATABASE_URL" \
+              notaryday-api npx prisma migrate deploy
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f
