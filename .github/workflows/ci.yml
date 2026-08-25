@@ -1,13 +1,11 @@
-name: Backend CI
+name: Backend CI (PR checks)
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [staging, main]
 
 concurrency:
-  group: backend-${{ github.workflow }}-${{ github.ref }}
+  group: backend-ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
