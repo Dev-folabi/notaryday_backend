@@ -184,4 +184,42 @@ describe('UsersService account management', () => {
       expect(arg.data.plan_expires_at).toBeUndefined();
     });
   });
+
+  describe('create() booking default', () => {
+    it('creates settings with booking_page_enabled true for new users', async () => {
+      const config = { get: jest.fn() };
+      config.get.mockImplementation((key: string) => {
+        if (key === 'IRS_RATE_PER_MILE') return 0.725;
+        return undefined;
+      });
+      const createMock = prisma.user.create;
+      createMock.mockResolvedValue({ id: 'u1' });
+
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          UsersService,
+          { provide: PrismaService, useValue: prisma },
+          { provide: ConfigService, useValue: config },
+        ],
+      }).compile();
+      const svc = module.get<UsersService>(UsersService);
+
+      await svc.create({
+        email: 'a@b.com',
+        password: 'secret123',
+        username: 'ab',
+      });
+
+      const calls = createMock.mock.calls as unknown as [
+        { data: Record<string, unknown> },
+      ][];
+      const arg = calls[0][0];
+      const settings = (
+        arg.data.settings as {
+          create: Record<string, unknown>;
+        }
+      ).create;
+      expect(settings.booking_page_enabled).toBe(true);
+    });
+  });
 });

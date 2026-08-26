@@ -77,6 +77,7 @@ export class UsersService {
           create: {
             irs_rate_per_mile:
               this.configService.get<number>('IRS_RATE_PER_MILE') ?? 0.725,
+            booking_page_enabled: true,
             ...(data.state ? { state: data.state } : {}),
           },
         },

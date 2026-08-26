@@ -7,7 +7,12 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  Req,
+  RawBodyRequest,
+  Headers,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -16,6 +21,7 @@ import {
   ApiParam,
   ApiBody,
   ApiConsumes,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -35,6 +41,9 @@ export class JobImportController {
   @Post('inbound')
   @Public()
   @ApiOperation({ summary: 'Inbound email webhook (called by Resend)' })
+  @ApiHeader({ name: 'svix-id', required: true })
+  @ApiHeader({ name: 'svix-timestamp', required: true })
+  @ApiHeader({ name: 'svix-signature', required: true })
   @ApiBody({
     schema: {
       properties: {
@@ -63,6 +72,10 @@ export class JobImportController {
     description: 'Email parsed and queued for processing',
   })
   async handleInbound(
+    @Req() request: RawBodyRequest<Request>,
+    @Headers('svix-id') svixId: string,
+    @Headers('svix-timestamp') svixTimestamp: string,
+    @Headers('svix-signature') svixSignature: string,
     @Body()
     body: {
       // Resend email.received webhook envelope
@@ -89,6 +102,17 @@ export class JobImportController {
       message_id?: string;
     },
   ) {
+    if (
+      !request.rawBody ||
+      !this.jobImport.verifyWebhookSignature(request.rawBody, {
+        id: svixId,
+        timestamp: svixTimestamp,
+        signature: svixSignature,
+      })
+    ) {
+      throw new UnauthorizedException('Invalid webhook signature');
+    }
+
     const data = body.data ?? {};
     const result = await this.jobImport.handleInbound({
       from: data.from ?? body.from ?? body.sender ?? '',

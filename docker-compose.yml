@@ -37,6 +37,8 @@ services:
       redis:
         condition: service_healthy
     command: ["node", "dist/src/main-worker"]
+    healthcheck:
+      disable: true
 
 volumes:
   redis_data:
