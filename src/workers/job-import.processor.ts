@@ -176,8 +176,14 @@ export class JobImportProcessor {
         const isRateLimit =
           axios.isAxiosError(error) && error.response?.status === 429;
 
-        if (isRateLimit && attempt < MAX_AI_RETRIES) {
-          const retryAfter = error.response?.headers?.['retry-after'];
+        if (
+          isRateLimit &&
+          attempt < MAX_AI_RETRIES &&
+          axios.isAxiosError(error)
+        ) {
+          const retryAfter: string | undefined = error.response?.headers?.[
+            'retry-after'
+          ] as string | undefined;
           const delay = retryAfter
             ? parseInt(retryAfter, 10) * 1000
             : Math.min(attempt * 5000, 15000);
