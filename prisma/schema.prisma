@@ -164,7 +164,7 @@ model UserSettings {
 
   // Booking page settings
   timezone                  String? @default("America/New_York") // IANA name for client-facing display
-  booking_page_enabled      Boolean @default(false)
+  booking_page_enabled      Boolean @default(true)
   booking_page_bio          String? @db.Text
   service_area_miles        Int     @default(25) // Max radius for direct bookings
   booking_buffer_mins       Int     @default(15) // Minimum gap before accepting booking

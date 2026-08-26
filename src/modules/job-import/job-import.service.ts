@@ -14,6 +14,7 @@ import {
 } from '../../../generated/prisma';
 import { JobsService } from '../jobs/jobs.service';
 import { CreateJobDto } from '../jobs/dto/create-job.dto';
+import { Resend } from 'resend';
 
 @Injectable()
 export class JobImportService {
@@ -25,6 +26,39 @@ export class JobImportService {
     private readonly jobsService: JobsService,
     @InjectQueue(QUEUE_JOB_IMPORT) private readonly queue: Queue,
   ) {}
+
+  verifyWebhookSignature(
+    payload: Buffer,
+    headers: { id?: string; timestamp?: string; signature?: string },
+  ): boolean {
+    const webhookSecret = this.config.get<string>('RESEND_WEBHOOK_SECRET');
+    if (
+      !webhookSecret ||
+      !headers.id ||
+      !headers.timestamp ||
+      !headers.signature
+    ) {
+      return false;
+    }
+
+    try {
+      const resend = new Resend(
+        this.config.get<string>('RESEND_API_KEY') ?? '',
+      );
+      resend.webhooks.verify({
+        webhookSecret,
+        payload: payload.toString('utf8'),
+        headers: {
+          id: headers.id,
+          timestamp: headers.timestamp,
+          signature: headers.signature,
+        },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   /** Handle inbound email webhook from Resend */
   async handleInbound(payload: {

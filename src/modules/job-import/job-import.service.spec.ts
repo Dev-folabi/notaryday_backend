@@ -11,6 +11,13 @@ import {
   JobStatus,
 } from '../../../generated/prisma';
 
+const resendVerify = jest.fn();
+jest.mock('resend', () => ({
+  Resend: jest.fn().mockImplementation(() => ({
+    webhooks: { verify: resendVerify },
+  })),
+}));
+
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({
     send: jest.fn().mockResolvedValue({}),
@@ -82,6 +89,62 @@ describe('JobImportService', () => {
         expect.objectContaining({ priority: 1 }),
       );
       expect(result).toEqual({ status: 'queued', importId: 'import-1' });
+    });
+  });
+
+  describe('verifyWebhookSignature', () => {
+    it('accepts a signature verified by Resend', () => {
+      config.get.mockImplementation((key: string) => {
+        if (key === 'RESEND_WEBHOOK_SECRET') return 'whsec_test';
+        if (key === 'RESEND_API_KEY') return 're_test';
+        return undefined;
+      });
+      resendVerify.mockReturnValue({ type: 'email.received' });
+
+      expect(
+        service.verifyWebhookSignature(
+          Buffer.from('{"type":"email.received"}'),
+          {
+            id: 'msg_123',
+            timestamp: '1700000000',
+            signature: 'v1,test-signature',
+          },
+        ),
+      ).toBe(true);
+      expect(resendVerify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          webhookSecret: 'whsec_test',
+          payload: '{"type":"email.received"}',
+        }),
+      );
+    });
+
+    it('rejects missing credentials or an invalid signature', () => {
+      config.get.mockReturnValue('');
+      expect(
+        service.verifyWebhookSignature(Buffer.from('{}'), {
+          id: 'msg_123',
+          timestamp: '1700000000',
+          signature: 'v1,test-signature',
+        }),
+      ).toBe(false);
+
+      config.get.mockImplementation((key: string) => {
+        if (key === 'RESEND_WEBHOOK_SECRET') return 'whsec_test';
+        if (key === 'RESEND_API_KEY') return 're_test';
+        return undefined;
+      });
+      resendVerify.mockImplementation(() => {
+        throw new Error('invalid signature');
+      });
+
+      expect(
+        service.verifyWebhookSignature(Buffer.from('{}'), {
+          id: 'msg_123',
+          timestamp: '1700000000',
+          signature: 'v1,bad-signature',
+        }),
+      ).toBe(false);
     });
   });
 

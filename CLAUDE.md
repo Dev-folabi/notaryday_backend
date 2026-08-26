@@ -409,7 +409,7 @@ PATCH  /bookings/:id/approve        Auth   Pro
 PATCH  /bookings/:id/decline        Auth   Pro
 
 EMAIL IMPORT
-POST   /email-import/inbound        Public (Resend webhook — HMAC verified, no CSRF)
+POST   /imports/inbound             Public (Resend webhook — Svix signature verified, no CSRF)
 
 SCREENSHOT IMPORT (Pro)
 POST   /screenshot-import/upload    Auth   Pro (multipart, saves to R2, enqueues job)
