@@ -138,36 +138,61 @@ export class JobImportProcessor {
     }
   }
 
-  /** Shared OpenRouter call (text-only for emails, multimodal for screenshots) */
+  /** Shared OpenRouter call (text-only for emails, multimodal for screenshots).
+   *  Handles 429 rate limits with retry + exponential backoff. */
   private async callAi(
     messages: Array<Record<string, unknown>>,
     model: string,
   ): Promise<ParsedImport> {
     const apiKey = this.config.get<string>('OPENROUTER_API_KEY');
+    const MAX_AI_RETRIES = 3;
 
-    const res = await axios.post<{
-      choices: Array<{ message: { content: string } }>;
-    }>(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model,
-        messages,
-        temperature: 0,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 30_000,
-      },
-    );
+    for (let attempt = 1; attempt <= MAX_AI_RETRIES; attempt++) {
+      try {
+        const res = await axios.post<{
+          choices: Array<{ message: { content: string } }>;
+        }>(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            model,
+            messages,
+            temperature: 0,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 30_000,
+          },
+        );
 
-    const content = res.data?.choices?.[0]?.message?.content ?? '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON in AI response');
+        const content = res.data?.choices?.[0]?.message?.content ?? '';
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON in AI response');
 
-    return JSON.parse(jsonMatch[0]) as ParsedImport;
+        return JSON.parse(jsonMatch[0]) as ParsedImport;
+      } catch (error) {
+        const isRateLimit =
+          axios.isAxiosError(error) && error.response?.status === 429;
+
+        if (isRateLimit && attempt < MAX_AI_RETRIES) {
+          const retryAfter = error.response?.headers?.['retry-after'];
+          const delay = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : Math.min(attempt * 5000, 15000);
+          this.logger.warn(
+            `OpenRouter rate limited (attempt ${attempt}/${MAX_AI_RETRIES}), retrying in ${delay}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new Error('AI retry exhausted');
   }
 
   /** Fetch a received email's body from the Resend API by its email_id */
