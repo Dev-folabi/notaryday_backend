@@ -13,6 +13,7 @@ import { BillingModule } from '../modules/billing/billing.module';
 import { BillingWebhookProcessor } from './billing-webhook.processor';
 import { InvoiceRetryCronService } from './invoice-retry-cron.service';
 import { SoftDeletePurgeService } from './soft-delete-purge.service';
+import { JobImportModule } from '../modules/job-import/job-import.module';
 import {
   QUEUE_JOB_IMPORT,
   QUEUE_INVOICE,
@@ -35,6 +36,7 @@ import {
     EmailTemplatesModule,
     CalendarModule,
     BillingModule,
+    JobImportModule,
   ],
   providers: [
     JobImportProcessor,

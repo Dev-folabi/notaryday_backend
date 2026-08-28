@@ -324,6 +324,8 @@ export class JobImportService {
       scanback_duration_mins: overrides?.scanback_duration_mins,
       client_name:
         overrides?.client_name ?? record.parsed_client_name ?? undefined,
+      client_phone: record.parsed_client_phone ?? undefined,
+      client_email: record.parsed_client_email ?? undefined,
       platform_name:
         overrides?.platform_name ?? record.parsed_platform_name ?? undefined,
       notes: record.parsed_notes ?? undefined,

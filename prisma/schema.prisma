@@ -416,15 +416,22 @@ model JobImport {
   file_key      String?
   file_mimetype String?
 
-  // AI parse result (OpenRouter)
+  // AI parse result
   parsed_address          String?
   parsed_appointment_time DateTime?    @db.Timestamptz
   parsed_signing_type     SigningType?
   parsed_fee              Decimal?     @db.Decimal(8, 2)
   parsed_platform_fee     Decimal?     @db.Decimal(8, 2)
   parsed_client_name      String?
+  parsed_client_phone     String?
+  parsed_client_email     String?
   parsed_platform_name    String?
   parsed_notes            String?
+
+  // Extraction pipeline metadata
+  extraction_method     String?   // 'rule' | 'hybrid'
+  extraction_confidence Decimal?  @db.Decimal(3, 2) // 0.00 - 1.00
+  ocr_text              String?   @db.Text // OCR output for screenshot imports (debug/audit)
 
   // Processing state
   status         ImportStatus @default(QUEUED)
