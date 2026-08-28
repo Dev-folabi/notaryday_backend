@@ -101,11 +101,8 @@ jobs:
             set -e
             cd /opt/notaryday
             docker compose -f docker-compose.prod.yml pull
-            source .env
-            # set -e aborts the deploy if the migration fails so we never ship
-            # a new schema against an old DB.
+            # DATABASE_URL is injected automatically via the service's env_file: .env
             docker compose -f docker-compose.prod.yml run --rm \
-              -e DATABASE_URL="$DATABASE_URL" \
               notaryday-api npx prisma migrate deploy
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f
