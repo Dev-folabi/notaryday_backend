@@ -14,14 +14,21 @@ export const validationSchema = Joi.object({
   // OpenRouteService
   ORS_API_KEY: Joi.string().required(),
 
-  // OpenRouter
-  OPENROUTER_API_KEY: Joi.string().required(),
+  // OpenRouter (AI) - optional secondary extraction provider
+  OPENROUTER_API_KEY: Joi.string().allow('').default(''),
   OPENROUTER_DEFAULT_MODEL: Joi.string().default(
     'google/gemma-4-26b-a4b-it:free',
   ),
   OPENROUTER_VISION_MODEL: Joi.string().default(
     'google/gemma-4-26b-a4b-it:free',
   ),
+
+  // Google Gemini (primary AI extraction provider, free tier supported)
+  GEMINI_API_KEY: Joi.string().allow('').default(''),
+  GEMINI_MODEL: Joi.string().default('gemini-2.5-flash'),
+
+  // Job extraction pipeline tuning
+  EXTRACTION_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.7),
 
   // Resend
   RESEND_API_KEY: Joi.string().required(),

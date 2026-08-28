@@ -25,11 +25,15 @@ export const orsConfig = registerAs('ors', () => ({
 }));
 
 export const openRouterConfig = registerAs('openrouter', () => ({
-  apiKey: process.env.OPENROUTER_API_KEY!,
+  apiKey: process.env.OPENROUTER_API_KEY ?? '',
   baseUrl: 'https://openrouter.ai/api/v1',
   defaultModel:
-    process.env.OPENROUTER_DEFAULT_MODEL ??
-    'mistralai/mistral-7b-instruct:free',
+    process.env.OPENROUTER_DEFAULT_MODEL ?? 'google/gemma-4-26b-a4b-it:free',
+}));
+
+export const geminiConfig = registerAs('gemini', () => ({
+  apiKey: process.env.GEMINI_API_KEY ?? '',
+  model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
 }));
 
 export const resendConfig = registerAs('resend', () => ({
@@ -65,6 +69,7 @@ export default [
   appConfig,
   orsConfig,
   openRouterConfig,
+  geminiConfig,
   resendConfig,
   lemonSqueezyConfig,
   googleConfig,
