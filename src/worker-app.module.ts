@@ -10,6 +10,7 @@ import { bullRedisConnection } from './queues/redis-connection';
 import { WorkersModule } from './workers/workers.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { OrsModule } from './common/services/ors.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     QueueModule,
     AuthModule,
     AnalyticsModule,
+    OrsModule,
     WorkersModule,
   ],
 })

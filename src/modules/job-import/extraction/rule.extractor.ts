@@ -63,6 +63,11 @@ export class RuleExtractor {
       confidence += (fieldConfidence[field] ?? 0.5) * WEIGHTS[field];
     }
 
+    // Quantize to 2 decimals so the value used for the threshold comparison
+    // matches what is stored/displayed (avoids float artifacts like
+    // 0.6994999999 displaying as "0.70" yet still triggering AI).
+    confidence = Math.round(confidence * 100) / 100;
+
     return { parsed, confidence, fieldConfidence };
   }
 

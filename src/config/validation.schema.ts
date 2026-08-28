@@ -25,7 +25,7 @@ export const validationSchema = Joi.object({
 
   // Google Gemini (primary AI extraction provider, free tier supported)
   GEMINI_API_KEY: Joi.string().allow('').default(''),
-  GEMINI_MODEL: Joi.string().default('gemini-2.5-flash'),
+  GEMINI_MODEL: Joi.string().default('gemini-3.6-flash'),
 
   // Job extraction pipeline tuning
   EXTRACTION_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.7),

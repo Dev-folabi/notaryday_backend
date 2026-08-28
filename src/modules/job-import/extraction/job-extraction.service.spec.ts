@@ -25,7 +25,7 @@ function makeModule(overrides: {
       if (key === 'GEMINI_API_KEY') {
         return overrides.geminiConfigured === false ? '' : 'test-gemini-key';
       }
-      if (key === 'GEMINI_MODEL') return 'gemini-2.5-flash';
+      if (key === 'GEMINI_MODEL') return 'gemini-3.6-flash';
       if (key === 'OPENROUTER_API_KEY') {
         return overrides.openRouterConfigured === false ? '' : 'test-or-key';
       }
@@ -91,7 +91,7 @@ Platform Fee: $25`,
         signing_type: SigningType.GENERAL,
         fee: 150,
       },
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
     });
     const module = await makeModule({
       gemini: { extractFromText: geminiCall },
@@ -104,7 +104,7 @@ Platform Fee: $25`,
     );
     expect(result.method).toBe('hybrid');
     expect(geminiCall).toHaveBeenCalledTimes(1);
-    expect(result.aiModel).toBe('gemini-2.5-flash');
+    expect(result.aiModel).toBe('gemini-3.6-flash');
     expect(result.parsed.address).toBe('123 Elm Street, Denver, CO 80202');
   });
 
@@ -125,7 +125,7 @@ Platform Fee: $25`,
         client_name: 'Wrong AI Name',
         address: '999 Wrong St, TX 11111',
       },
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
     });
     const module = await makeModule({
       gemini: { extractFromText: geminiCall },
@@ -171,7 +171,7 @@ Platform Fee: $25`,
   it('falls back to AI vision when OCR fails instead of failing the import', async () => {
     const geminiVision = jest.fn().mockResolvedValue({
       parsed: { address: '88 Vision St, Atlanta, GA 30301' },
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
     });
     const module = await makeModule({
       ocr: { extractText: jest.fn().mockRejectedValue(new Error('ocr boom')) },
@@ -184,7 +184,7 @@ Platform Fee: $25`,
     );
     // OCR failed but the import still resolves via Gemini vision.
     expect(result.parsed.address).toBe('88 Vision St, Atlanta, GA 30301');
-    expect(result.aiModel).toBe('gemini-2.5-flash');
+    expect(result.aiModel).toBe('gemini-3.6-flash');
     expect(geminiVision).toHaveBeenCalledWith(
       Buffer.from('fake-image'),
       'image/png',

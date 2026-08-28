@@ -46,7 +46,7 @@ export class GeminiExtractor implements AIExtractor {
 
   constructor(private readonly config: ConfigService) {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
-    this.model = this.config.get<string>('GEMINI_MODEL') ?? 'gemini-2.5-flash';
+    this.model = this.config.get<string>('GEMINI_MODEL') ?? 'gemini-3.6-flash';
     this.client = apiKey ? new GoogleGenAI({ apiKey }) : null;
   }
 
@@ -96,6 +96,10 @@ export class GeminiExtractor implements AIExtractor {
             temperature: 0,
             responseMimeType: 'application/json',
             responseSchema: JSON_SCHEMA,
+            httpOptions: {
+              // Hard cap so a hung upstream request can never block a job.
+              timeout: 45_000,
+            },
           },
         });
 

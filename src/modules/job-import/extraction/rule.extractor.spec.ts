@@ -60,4 +60,18 @@ describe('RuleExtractor', () => {
     const result = extractor.extract(text);
     expect(result.confidence).toBeLessThan(0.7);
   });
+
+  it('quantizes confidence to 2 decimals so borderline 0.70 is >= threshold', () => {
+    // This text sums to 0.6965 in raw float (address=0.85 + time=0.95 +
+    // signing_type=0.95 + platform_name=0.7), which is < 0.7 and would have
+    // triggered AI. After quantization it must be exactly 0.70 (>= 0.7), so
+    // the pipeline treats it as rule-sufficient instead of calling AI.
+    const text = `From: SnapDocs
+Signing Type: Purchase Closing
+Date & Time: August 28, 2026 at 2:30 PM
+Address: 456 Oak Avenue, Suite 200, 33601`;
+    const result = extractor.extract(text);
+    expect(result.confidence).toBe(0.7);
+    expect(result.confidence >= 0.7).toBe(true);
+  });
 });

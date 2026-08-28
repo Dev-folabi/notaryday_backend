@@ -13,6 +13,7 @@ import { EmailRendererService } from '../common/email/email-renderer.service';
 import { AnalyticsService } from '../modules/analytics/analytics.service';
 import { JobExtractionService } from '../modules/job-import/extraction/job-extraction.service';
 import { ExtractionOutcome } from '../modules/job-import/extraction/extraction.types';
+import { withTimeout } from '../modules/job-import/extraction/timeout.util';
 
 const PARSE_EMAIL = 'parse-email';
 const PARSE_SCREENSHOT = 'parse-screenshot';
@@ -190,7 +191,11 @@ export class JobImportProcessor {
     }
 
     const resend = new Resend(apiKey);
-    const { data, error } = await resend.emails.receiving.get(emailId);
+    const { data, error } = await withTimeout(
+      resend.emails.receiving.get(emailId),
+      15_000,
+      'Resend body fetch timed out',
+    );
     if (error) {
       throw new Error(`Resend fetch failed: ${error.message}`);
     }
@@ -216,8 +221,10 @@ export class JobImportProcessor {
       credentials: { accessKeyId, secretAccessKey },
     });
 
-    const result = await s3.send(
-      new GetObjectCommand({ Bucket: bucket, Key: fileKey }),
+    const result = await withTimeout(
+      s3.send(new GetObjectCommand({ Bucket: bucket, Key: fileKey })),
+      15_000,
+      'R2 screenshot fetch timed out',
     );
     if (!result.Body) {
       throw new Error(`Screenshot not found in R2: ${fileKey}`);

@@ -20,7 +20,11 @@ Fields:
 - notes: any special instructions or additional relevant details
 All field nullable, do not invent data. Only extract what is present.`;
 
-const MAX_AI_RETRIES = 3;
+// OpenRouter free tier rate-limits hard. Keep the retry short so a 429 (when
+// Gemini is already down) fails fast and the pipeline falls back to the rule
+// result instead of burning ~15s on backoff.
+const MAX_AI_RETRIES = 2;
+const RATE_LIMIT_RETRY_DELAY_MS = 2_000;
 
 /**
  * OpenRouter fallback provider (kept behind the AIExtractor interface so it
@@ -122,8 +126,8 @@ export class OpenRouterExtractor implements AIExtractor {
             'retry-after'
           ] as string | undefined;
           const delay = retryAfter
-            ? parseInt(retryAfter, 10) * 1000
-            : Math.min(attempt * 5000, 15000);
+            ? Math.min(parseInt(retryAfter, 10) * 1000, 5_000)
+            : RATE_LIMIT_RETRY_DELAY_MS;
           this.logger.warn(
             `OpenRouter rate limited (attempt ${attempt}/${MAX_AI_RETRIES}), retrying in ${delay}ms`,
           );

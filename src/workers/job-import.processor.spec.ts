@@ -102,7 +102,7 @@ describe('JobImportProcessor', () => {
       method: 'hybrid',
       confidence: 0.5,
       ocrText: 'signing text',
-      aiModel: 'gemini-2.5-flash',
+      aiModel: 'gemini-3.6-flash',
     });
 
     // Override fetchScreenshot by directly invoking the extraction service path
@@ -127,7 +127,7 @@ describe('JobImportProcessor', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           extraction_method: 'hybrid',
-          ai_model_used: 'gemini-2.5-flash',
+          ai_model_used: 'gemini-3.6-flash',
           ocr_text: 'signing text',
         }) as object,
       }),
