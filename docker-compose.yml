@@ -10,6 +10,15 @@ services:
       timeout: 5s
       retries: 3
 
+  # One-shot migration runner. `up` will not start API/worker until this
+  # completes successfully.
+  migrate:
+    image: ghcr.io/dev-folabi/notaryday_backend:latest
+    restart: "no"
+    env_file:
+      - .env
+    command: ["npx", "prisma", "migrate", "deploy"]
+
   notaryday-api:
     image: ghcr.io/dev-folabi/notaryday_backend:latest
     restart: unless-stopped
@@ -23,6 +32,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: ["node", "dist/src/main"]
 
   notaryday-worker:
@@ -36,6 +47,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: ["node", "dist/src/main-worker"]
     healthcheck:
       disable: true
