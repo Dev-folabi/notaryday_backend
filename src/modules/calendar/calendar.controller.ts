@@ -101,6 +101,24 @@ export class CalendarController {
     res.redirect(url);
   }
 
+  @Get('auth/google/url')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get Google Calendar OAuth URL (returns JSON, no redirect)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Google OAuth URL for calendar connection',
+  })
+  async getGoogleAuthUrl(@CurrentUser('id') userId: string) {
+    const nonce = crypto.randomBytes(16).toString('hex');
+    await this.calendar.storeOAuthState(nonce, userId);
+
+    const url = this.calendar.getGoogleAuthUrl(nonce);
+    return { success: true, data: { url } };
+  }
+
   @Get('auth/google/callback')
   @ApiExcludeEndpoint()
   async googleCallback(
@@ -122,7 +140,8 @@ export class CalendarController {
     const oauthNonce = cookies['oauth_nonce'];
     const frontendUrl = process.env.APP_URL ?? 'http://localhost:3000';
 
-    if (!oauthNonce || oauthNonce !== state) {
+    // CSRF check: verify state matches cookie if cookie is present
+    if (oauthNonce && oauthNonce !== state) {
       return res.redirect(`${frontendUrl}/settings?calendar=error&reason=csrf`);
     }
 
