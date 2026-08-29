@@ -199,7 +199,7 @@ export class JobImportProcessor {
     if (error) {
       throw new Error(`Resend fetch failed: ${error.message}`);
     }
-    
+
     const text = data?.text?.trim();
     return text ? text : (data?.html ?? '');
   }
