@@ -234,7 +234,7 @@ export class JobsService {
     userId: string,
     filters?: {
       date?: string;
-      status?: JobStatus;
+      status?: JobStatus | JobStatus[];
       from?: string;
       to?: string;
     },
@@ -242,14 +242,18 @@ export class JobsService {
     const where: {
       user_id: string;
       deleted_at: null;
-      status?: JobStatus;
+      status?: JobStatus | { in: JobStatus[] };
       appointment_time?: { gte?: Date; lt?: Date };
     } = {
       user_id: userId,
       deleted_at: null,
     };
 
-    if (filters?.status) where.status = filters.status;
+    if (filters?.status) {
+      where.status = Array.isArray(filters.status)
+        ? { in: filters.status }
+        : filters.status;
+    }
 
     if (filters?.date) {
       const day = new Date(filters.date);
