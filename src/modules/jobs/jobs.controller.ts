@@ -59,7 +59,8 @@ export class JobsController {
     name: 'status',
     required: false,
     enum: JobStatus,
-    description: 'Filter by status',
+    description:
+      'Filter by status (comma-separated for multiple, e.g. IN_PROGRESS,SCANNING)',
   })
   @ApiQuery({
     name: 'from',
@@ -77,11 +78,19 @@ export class JobsController {
   async findAll(
     @CurrentUser('id') userId: string,
     @Query('date') date?: string,
-    @Query('status') status?: JobStatus,
+    @Query('status') status?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const jobs = await this.jobs.findAll(userId, { date, status, from, to });
+    const statusFilter = status?.split(',').filter(Boolean) as
+      | JobStatus[]
+      | undefined;
+    const jobs = await this.jobs.findAll(userId, {
+      date,
+      status: statusFilter,
+      from,
+      to,
+    });
     return { success: true, data: jobs, meta: { count: jobs.length } };
   }
 

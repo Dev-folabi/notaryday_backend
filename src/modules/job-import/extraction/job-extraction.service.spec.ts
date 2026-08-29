@@ -8,6 +8,10 @@ import { GeminiExtractor } from './gemini.extractor';
 import { OpenRouterExtractor } from './openrouter.extractor';
 import { AIExtractor } from './extraction.types';
 import { SigningType } from '../../../../generated/prisma';
+import {
+  GMAIL_FORWARDED_EMAIL,
+  OUTLOOK_FORWARDED_EMAIL,
+} from './test-fixtures';
 
 function makeModule(overrides: {
   geminiConfigured?: boolean;
@@ -81,6 +85,30 @@ Platform Fee: $25`,
     expect(result.parsed.address).toContain('456 Oak Ave');
     expect(result.confidence).toBeGreaterThanOrEqual(0.7);
     expect(gemini.extractFromText).not.toHaveBeenCalled();
+  });
+
+  it('parses a Gmail-forwarded email like a direct email (no AI needed)', async () => {
+    const module = await makeModule({});
+    const service = module.get(JobExtractionService);
+    const gemini = module.get(GeminiExtractor);
+    const result = await service.extractFromEmail(GMAIL_FORWARDED_EMAIL);
+    expect(result.method).toBe('rule');
+    expect(result.parsed.address).toContain('456 Oak Avenue');
+    expect(result.parsed.appointment_time).toMatch(/^2026-08-28T14:30:00$/);
+    expect(result.parsed.signing_type).toBe(SigningType.LOAN_REFI);
+    expect(result.parsed.fee).toBe(175);
+    expect(result.confidence).toBeGreaterThanOrEqual(0.7);
+    expect(gemini.extractFromText).not.toHaveBeenCalled();
+  });
+
+  it('parses an Outlook-forwarded email like a direct email', async () => {
+    const module = await makeModule({});
+    const service = module.get(JobExtractionService);
+    const result = await service.extractFromEmail(OUTLOOK_FORWARDED_EMAIL);
+    expect(result.method).toBe('rule');
+    expect(result.parsed.address).toContain('456 Oak Avenue');
+    expect(result.parsed.appointment_time).toMatch(/^2026-08-28T14:30:00$/);
+    expect(result.parsed.fee).toBe(175);
   });
 
   it('falls back to AI (hybrid) when confidence is low, filling low-confidence fields', async () => {

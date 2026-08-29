@@ -199,7 +199,9 @@ export class JobImportProcessor {
     if (error) {
       throw new Error(`Resend fetch failed: ${error.message}`);
     }
-    return data?.text ?? data?.html ?? '';
+
+    const text = data?.text?.trim();
+    return text ? text : (data?.html ?? '');
   }
 
   /** Fetch a screenshot's raw bytes from R2 */
