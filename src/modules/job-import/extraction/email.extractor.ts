@@ -45,7 +45,10 @@ export class EmailExtractor {
     return this.normalize(text);
   }
 
-  /** Collapse blank lines, trim, drop quoted-reply footers. */
+  /**
+   * Collapse blank lines, trim, drop quoted-reply content and forwarded-message
+   * header blocks.
+   */
   normalize(input: string): string {
     if (!input) return '';
     let text = input
@@ -54,14 +57,7 @@ export class EmailExtractor {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
-    // Drop Outlook/Gmail quoted reply blocks
-    text = text
-      .split(
-        /\n(?:From:|Sent:|To:|Cc:|Bcc:|Subject:|-----Original Message-----)/i,
-      )[0]
-      .split(/\n(?:On .* wrote:)/i)[0]
-      .replace(/\n>\s?.*/g, '')
-      .trim();
+    text = stripQuotedAndForwarded(text);
 
     // Drop email signature lines after "Thanks," / "Best," / a name line
     text = text
@@ -72,4 +68,66 @@ export class EmailExtractor {
 
     return text;
   }
+}
+
+const FORWARD_MARKERS = [
+  /^[-=]{5,}\s*forwarded message\s*[-=]{5,}\s*$/i,
+  /^[-=]{5,}\s*forwarded\s*[-=]{5,}\s*$/i,
+  /^begin forwarded message:\s*$/i,
+  /^-----original message-----\s*$/i,
+  /^---\s*forwarded\s*message\s*---\s*$/i,
+];
+
+const EMAIL_HEADER =
+  /^(?:from|sent|to|cc|bcc|subject|date|reply-to|message-id|mime-version|content-type):/i;
+
+const REPLY_MARKER = /^on\s+.+\s+wrote:\s*$/i;
+
+function stripQuotedAndForwarded(text: string): string {
+  const lines = text.split('\n');
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Quoted reply content — noise, drop entirely.
+    if (/^>\s?/.test(line)) {
+      i++;
+      continue;
+    }
+
+    // "On X wrote:" — everything after is a quoted reply; stop.
+    if (REPLY_MARKER.test(line)) break;
+
+    // Forward marker — skip it and the header/blank lines that follow, but
+    // KEEP the message body (that is where the job details live).
+    if (FORWARD_MARKERS.some((re) => re.test(line))) {
+      i++;
+      while (
+        i < lines.length &&
+        (EMAIL_HEADER.test(lines[i]) || !lines[i].trim())
+      ) {
+        i++;
+      }
+      continue;
+    }
+
+    // Markerless forward (Outlook): a run of 2+ email header lines marks the
+    // forwarded block. Skip the header run and trailing blank, keep the body.
+    if (EMAIL_HEADER.test(line)) {
+      let j = i;
+      while (j < lines.length && EMAIL_HEADER.test(lines[j])) j++;
+      if (j - i >= 2) {
+        i = j;
+        while (i < lines.length && !lines[i].trim()) i++;
+        continue;
+      }
+    }
+
+    result.push(line);
+    i++;
+  }
+
+  return result.join('\n').trim();
 }
