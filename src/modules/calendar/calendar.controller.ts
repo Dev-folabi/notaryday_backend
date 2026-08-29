@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Delete,
   Param,
   Query,
   Res,
@@ -17,6 +18,8 @@ import {
 } from '@nestjs/swagger';
 import { Response, Request } from 'express';
 import { AuthGuard } from '../../common/guards/auth.guard';
+import { PlanGuard } from '../../common/guards/plan.guard';
+import { RequiresPro } from '../../common/decorators/requires-pro.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CalendarService } from './calendar.service';
 import * as crypto from 'crypto';
@@ -26,7 +29,7 @@ import * as crypto from 'crypto';
 export class CalendarController {
   constructor(private readonly calendar: CalendarService) {}
 
-  @Get('/cal/:token/feed.ics')
+  @Get(':token/feed.ics')
   @ApiOperation({ summary: 'Get iCal feed (public, token-authenticated)' })
   @ApiParam({
     name: 'token',
@@ -58,8 +61,19 @@ export class CalendarController {
     const token = await this.calendar.getOrCreateFeedToken(userId);
     return {
       success: true,
-      data: { token, url: `/api/v1/cal/${token}/feed.ics` },
+      data: { token, url: `/api/v1/calendar/${token}/feed.ics` },
     };
+  }
+
+  @Delete('disconnect')
+  @UseGuards(AuthGuard, PlanGuard)
+  @RequiresPro()
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Disconnect Google Calendar' })
+  @ApiResponse({ status: 200, description: 'Google Calendar disconnected' })
+  async disconnect(@CurrentUser('id') userId: string) {
+    const result = await this.calendar.disconnect(userId);
+    return { success: true, data: result };
   }
 
   @Get('auth/google')
@@ -106,7 +120,7 @@ export class CalendarController {
     );
 
     const oauthNonce = cookies['oauth_nonce'];
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    const frontendUrl = process.env.APP_URL ?? 'http://localhost:3000';
 
     if (!oauthNonce || oauthNonce !== state) {
       return res.redirect(`${frontendUrl}/settings?calendar=error&reason=csrf`);
