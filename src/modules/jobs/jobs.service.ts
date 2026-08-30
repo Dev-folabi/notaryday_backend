@@ -436,6 +436,31 @@ export class JobsService {
       await this.invalidateRouteCache(userId, appointmentTime);
     }
 
+    // Re-sync Google Calendar when a confirmed job's schedule or location changes.
+    // The ICS feed regenerates on demand, but Google Calendar events must be
+    // pushed explicitly via the calendar-sync queue.
+    const calendarRelevantFieldsChanged =
+      dto.appointment_time !== undefined ||
+      dto.address !== undefined ||
+      dto.signing_duration_mins !== undefined;
+
+    if (
+      updated.status === JobStatus.CONFIRMED &&
+      calendarRelevantFieldsChanged
+    ) {
+      try {
+        await Promise.race([
+          this.calendarSyncQueue.add('sync-job', { userId, jobId }),
+          new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+        ]);
+      } catch (err) {
+        this.logger.error(
+          `Failed to enqueue calendar sync for edited job ${jobId}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+
     // Apply an optional status transition (validated & timestamped)
     if (dto.status !== undefined && dto.status !== updated.status) {
       return this.updateStatus(userId, jobId, dto.status);
@@ -619,6 +644,31 @@ export class JobsService {
 
   async remove(userId: string, jobId: string) {
     const job = await this.findOne(userId, jobId);
+
+    // Remove the Google Calendar event when a confirmed (or in-progress /
+    // complete) job is deleted — the ICS feed regenerates on demand, but
+    // Google Calendar events must be deleted explicitly.
+    if (
+      job.status === JobStatus.CONFIRMED ||
+      job.status === JobStatus.IN_PROGRESS ||
+      job.status === JobStatus.COMPLETE
+    ) {
+      try {
+        await Promise.race([
+          this.calendarSyncQueue.add('delete-event', {
+            userId,
+            jobId,
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+        ]);
+      } catch (err) {
+        this.logger.error(
+          `Failed to enqueue calendar delete for job ${jobId}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+
     const result = await this.prisma.job.update({
       where: { id: jobId },
       data: { deleted_at: new Date() },

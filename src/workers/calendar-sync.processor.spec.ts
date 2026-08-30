@@ -40,7 +40,14 @@ describe('CalendarSyncProcessor', () => {
       .mockResolvedValueOnce('new');
     global.fetch = jest
       .fn()
+      // findMatchingEvent call (events.list)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ items: [] }),
+      })
+      // First sync attempt → 401
       .mockResolvedValueOnce({ ok: false, status: 401 })
+      // Retry after refresh → 200
       .mockResolvedValueOnce({ ok: true, status: 200 });
 
     await processor.handleSyncJob({
@@ -51,16 +58,24 @@ describe('CalendarSyncProcessor', () => {
       'u1',
       true,
     );
-    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
   it('rethrows retryable Google failures for Bull', async () => {
     calendar.getValidGoogleAccessToken.mockResolvedValue('token');
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 429,
-      text: jest.fn().mockResolvedValue('rate limited'),
-    });
+    global.fetch = jest
+      .fn()
+      // findMatchingEvent call (events.list)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ items: [] }),
+      })
+      // sync attempt → 429
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: jest.fn().mockResolvedValue('rate limited'),
+      });
     await expect(
       processor.handleSyncJob({
         data: { userId: 'u1', jobId: 'job-1' },

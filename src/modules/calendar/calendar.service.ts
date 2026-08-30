@@ -308,4 +308,16 @@ export class CalendarService {
       },
     });
   }
+
+  /** User-initiated disconnect from Google Calendar */
+  async disconnect(userId: string) {
+    await this.prisma.userSettings.update({
+      where: { user_id: userId },
+      data: {
+        google_calendar_connected: false,
+        google_calendar_token: Prisma.JsonNull,
+      },
+    });
+    return { disconnected: true };
+  }
 }

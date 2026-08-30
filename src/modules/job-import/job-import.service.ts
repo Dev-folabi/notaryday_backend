@@ -330,7 +330,7 @@ export class JobImportService {
         overrides?.platform_name ?? record.parsed_platform_name ?? undefined,
       notes: record.parsed_notes ?? undefined,
       source,
-      status: JobStatus.PENDING,
+      status: JobStatus.CONFIRMED,
     };
 
     const job = await this.jobsService.create(userId, dto, undefined, importId);
