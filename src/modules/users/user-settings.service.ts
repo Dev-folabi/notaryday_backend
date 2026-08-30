@@ -152,6 +152,7 @@ export class UserSettingsService {
       scanback_duration_mins?: number;
       state?: string;
       notificationPrefs?: Record<string, boolean>;
+      setupChecklistDismissed?: boolean;
     },
   ) {
     const updateData: {
@@ -179,6 +180,7 @@ export class UserSettingsService {
       scanback_duration_mins?: number;
       state?: string;
       notification_prefs?: Prisma.InputJsonValue;
+      setup_checklist_dismissed?: boolean;
     } = {};
     if (data.home_base_address !== undefined)
       updateData.home_base_address = data.home_base_address;
@@ -231,6 +233,8 @@ export class UserSettingsService {
     if (data.notificationPrefs !== undefined)
       updateData.notification_prefs =
         data.notificationPrefs as Prisma.InputJsonValue;
+    if (data.setupChecklistDismissed !== undefined)
+      updateData.setup_checklist_dismissed = data.setupChecklistDismissed;
 
     return this.prisma.userSettings.upsert({
       where: { user_id: userId },

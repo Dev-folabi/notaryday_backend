@@ -195,6 +195,9 @@ model UserSettings {
   google_calendar_connected  Boolean @default(false)
   google_calendar_token      Json?   // OAuth tokens { access_token, refresh_token, expiry }
 
+  // Setup checklist
+  setup_checklist_dismissed Boolean @default(false)
+
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
 

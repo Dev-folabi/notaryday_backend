@@ -233,7 +233,7 @@ describe('JobImportService', () => {
         expect.objectContaining({
           address: '123 Main St',
           source: JobSource.SCREENSHOT,
-          status: JobStatus.PENDING,
+          status: JobStatus.CONFIRMED,
           platform_name: 'SigningOrder',
         }),
         undefined,
