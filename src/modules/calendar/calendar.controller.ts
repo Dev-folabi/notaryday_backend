@@ -19,6 +19,7 @@ import {
 import { Response, Request } from 'express';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PlanGuard } from '../../common/guards/plan.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { RequiresPro } from '../../common/decorators/requires-pro.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CalendarService } from './calendar.service';
@@ -30,6 +31,7 @@ export class CalendarController {
   constructor(private readonly calendar: CalendarService) {}
 
   @Get(':token/feed.ics')
+  @Public()
   @ApiOperation({ summary: 'Get iCal feed (public, token-authenticated)' })
   @ApiParam({
     name: 'token',
@@ -120,6 +122,7 @@ export class CalendarController {
   }
 
   @Get('auth/google/callback')
+  @Public()
   @ApiExcludeEndpoint()
   async googleCallback(
     @Query('code') code: string,
