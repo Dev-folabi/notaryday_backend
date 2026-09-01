@@ -31,6 +31,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { JournalModule } from './modules/journal/journal.module';
 import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     ReportsModule,
     JournalModule,
     EmailTemplatesModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

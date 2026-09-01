@@ -90,6 +90,10 @@ export const validationSchema = Joi.object({
   // Application Defaults
   IRS_RATE_PER_MILE: Joi.number().default(0.725),
 
+  // Admin bootstrap (seeded by `prisma db seed`)
+  ADMIN_EMAIL: Joi.string().allow('').default('admin@notaryday.app'),
+  ADMIN_PASSWORD: Joi.string().allow('').default(''),
+
   // New-account Pro trial (feature-flag gated)
   TRIAL_PLAN: Joi.boolean().default(false),
   TRIAL_DAYS: Joi.number().integer().min(1).default(30),

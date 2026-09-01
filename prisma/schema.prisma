@@ -49,6 +49,11 @@ enum PlanTier {
   TEAM // V2, not in MVP
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 enum NavApp {
   GOOGLE_MAPS
   APPLE_MAPS
@@ -104,6 +109,9 @@ model User {
   username      String  @unique // URL slug: notaryday.app/book/[username]
   full_name     String?
   phone         String?
+
+  // Role & permissions
+  role UserRole @default(USER)
 
   // Plan & billing
   plan                          PlanTier  @default(FREE)

@@ -93,6 +93,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    if (user.deleted_at) {
+      throw new UnauthorizedException(
+        'This account has been suspended. Contact support.',
+      );
+    }
+
     const valid = await this.usersService.validatePassword(user, password);
     if (!valid) {
       throw new UnauthorizedException('Invalid email or password');
@@ -149,6 +155,12 @@ export class AuthService {
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
+    }
+
+    if (user.deleted_at) {
+      throw new UnauthorizedException(
+        'This account has been suspended. Contact support.',
+      );
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
