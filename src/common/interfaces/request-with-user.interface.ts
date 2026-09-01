@@ -1,4 +1,4 @@
-import { PlanTier } from '../../../generated/prisma';
+import { PlanTier, UserRole } from '../../../generated/prisma';
 import { Request } from 'express';
 
 export interface RequestWithUser extends Request {
@@ -7,6 +7,8 @@ export interface RequestWithUser extends Request {
     email: string;
     full_name?: string;
     plan: PlanTier;
+    role?: UserRole;
+    deleted_at?: Date | null;
   };
   params: {
     id?: string;
