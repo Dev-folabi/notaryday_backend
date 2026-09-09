@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -42,8 +43,16 @@ export class AuthGuard implements CanActivate {
 
     const token = authHeader.split(' ')[1];
 
-    if (await this.authService.isTokenBlacklisted(token)) {
-      throw new UnauthorizedException('Session expired, please login');
+    // Fail open on Redis errors — an unavailable cache must not log users out
+    try {
+      if (await this.authService.isTokenBlacklisted(token)) {
+        throw new UnauthorizedException('Session expired, please login');
+      }
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      console.error('Blacklist check failed (Redis unavailable):', error);
     }
 
     try {
@@ -51,10 +60,22 @@ export class AuthGuard implements CanActivate {
       (request as RequestWithUser).user = user as User;
       return true;
     } catch (e) {
-      console.error('AuthGuard authentication failed:', e);
-      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+      // Genuinely invalid/expired token → 401
+      if (e instanceof UnauthorizedException) {
         throw e;
       }
+      // Infrastructure failure (DB down, connection error) → 500 so clients
+      // don't treat a transient outage as a dead session
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError ||
+        e instanceof Prisma.PrismaClientInitializationError
+      ) {
+        console.error('AuthGuard database error:', e);
+        throw new InternalServerErrorException(
+          'Authentication temporarily unavailable',
+        );
+      }
+      console.error('AuthGuard authentication failed:', e);
       throw new UnauthorizedException('Invalid token');
     }
   }

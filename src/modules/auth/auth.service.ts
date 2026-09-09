@@ -65,14 +65,44 @@ export class AuthService {
     // Seed signing type defaults
     await this.userSettingsService.seedSigningDefaults(user.id);
 
-    // Send welcome email
+    // New accounts get a Pro trial via TRIAL_PLAN/TRIAL_DAYS
+    const trialDays = user.plan_expires_at
+      ? Math.max(
+          1,
+          Math.ceil(
+            (user.plan_expires_at.getTime() - Date.now()) /
+              (24 * 60 * 60 * 1000),
+          ),
+        )
+      : undefined;
+    const displayName = user.full_name || user.username || 'Notary';
+
+    // Send welcome email (includes Pro trial info when applicable)
     try {
       await this.notificationsService.sendWelcomeEmail(
         user.email,
-        user.full_name || user.username || 'Notary',
+        displayName,
+        trialDays,
       );
     } catch (error) {
       console.warn(`Failed to send welcome email to ${user.email}:`, error);
+    }
+
+    // Create welcome in-app notification
+    try {
+      await this.notificationsService.createNotification({
+        userId: user.id,
+        type: 'WELCOME',
+        title: 'Welcome to Notary Day!',
+        body: trialDays
+          ? `Welcome aboard! You have full access to Pro plan features free for ${trialDays} days — no credit card required. When your trial ends you'll move to the Free plan; you can keep Pro anytime from Account → Billing.`
+          : 'Welcome aboard! Complete your setup to start managing your schedule, jobs, and profitability in one place.',
+      });
+    } catch (error) {
+      console.warn(
+        `Failed to create welcome notification for ${user.email}:`,
+        error,
+      );
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

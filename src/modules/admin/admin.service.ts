@@ -64,6 +64,8 @@ export class AdminService {
       freeUsers,
       proUsers,
       proAnnualUsers,
+      proTrialUsers,
+      proPaidUsers,
       totalJobs,
       jobs30d,
       pendingBookings,
@@ -94,6 +96,23 @@ export class AdminService {
       }),
       this.prisma.user.count({
         where: { deleted_at: null, plan: PlanTier.PRO_ANNUAL },
+      }),
+      // Pro trials: PRO plan without a Lemon Squeezy subscription (see expireTrials cron)
+      this.prisma.user.count({
+        where: {
+          deleted_at: null,
+          plan: { in: [PlanTier.PRO, PlanTier.PRO_ANNUAL] },
+          lemon_squeezy_subscription_id: null,
+          plan_expires_at: { not: null },
+        },
+      }),
+      // Paid Pro subscribers: PRO plan backed by a Lemon Squeezy subscription
+      this.prisma.user.count({
+        where: {
+          deleted_at: null,
+          plan: { in: [PlanTier.PRO, PlanTier.PRO_ANNUAL] },
+          lemon_squeezy_subscription_id: { not: null },
+        },
       }),
       this.prisma.job.count({ where: { deleted_at: null } }),
       this.prisma.job.count({
@@ -134,6 +153,8 @@ export class AdminService {
           PRO: proUsers,
           PRO_ANNUAL: proAnnualUsers,
         },
+        proTrial: proTrialUsers,
+        proPaid: proPaidUsers,
         recent: recentUsers,
       },
       jobs: {
