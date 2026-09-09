@@ -90,7 +90,18 @@ export class NotificationsService {
   /**
    * Send welcome/onboarding email to new user
    */
-  async sendWelcomeEmail(userEmail: string, userName: string) {
+  async sendWelcomeEmail(
+    userEmail: string,
+    userName: string,
+    trialDays?: number,
+  ) {
+    const trialBanner = trialDays
+      ? `<div style="margin-top:18px;padding:12px 14px;border-radius:8px;background:#FFFBEB;border:1px solid #FDE68A;color:#475569;font-size:12px;line-height:1.6"><strong style="color:#0F2C4E">You're on Pro, free for ${trialDays} days.</strong> Every Pro feature is unlocked during your trial — no credit card required. When it ends you'll move to the Free plan. You can keep Pro anytime from Account &rarr; Billing.</div>`
+      : '';
+    const trialPlain = trialDays
+      ? ` You have full Pro plan features free for ${trialDays} days (no credit card required). When your trial ends you'll move to the Free plan; subscribe from Account -> Billing to keep Pro.`
+      : '';
+
     const rendered = this.emailRenderer.render({
       title: `Welcome to Notary Day, ${userName}!`,
       subtitle: 'Getting started with your notary workspace',
@@ -98,10 +109,11 @@ export class NotificationsService {
       intro:
         'Notary Day helps mobile notaries manage scheduling, jobs, profitability, and client communication in one place.',
       contentHtml:
-        '<ol style="margin:0;padding-left:20px;color:#475569;font-size:13px;line-height:1.8"><li>Complete onboarding with your home base and signing types.</li><li>Try Can I Take This? for your next job inquiry.</li><li>Explore your day view and job schedule.</li></ol><div style="margin-top:18px;padding:12px 14px;border-radius:8px;background:#FFFBEB;border:1px solid #FDE68A;color:#475569;font-size:12px;line-height:1.6"><strong style="color:#0F2C4E">Pro tip:</strong> Use CITT before committing to a job to check schedule fit and profitability.</div>',
+        '<ol style="margin:0;padding-left:20px;color:#475569;font-size:13px;line-height:1.8"><li>Complete onboarding with your home base and signing types.</li><li>Try Can I Take This? for your next job inquiry.</li><li>Explore your day view and job schedule.</li></ol><div style="margin-top:18px;padding:12px 14px;border-radius:8px;background:#FFFBEB;border:1px solid #FDE68A;color:#475569;font-size:12px;line-height:1.6"><strong style="color:#0F2C4E">Pro tip:</strong> Use CITT before committing to a job to check schedule fit and profitability.</div>' +
+        trialBanner,
       footer:
         'You are receiving this email because you signed up for Notary Day.',
-      plainText: `Welcome to Notary Day, ${userName}. Complete onboarding, try CITT, and explore your schedule.`,
+      plainText: `Welcome to Notary Day, ${userName}. Complete onboarding, try CITT, and explore your schedule.${trialPlain}`,
     });
 
     return this.sendEmail({
@@ -181,6 +193,7 @@ export class NotificationsService {
   async createNotification(data: {
     userId: string;
     type:
+      | 'WELCOME'
       | 'BOOKING_RECEIVED'
       | 'BOOKING_CONFIRMED'
       | 'BOOKING_DECLINED'

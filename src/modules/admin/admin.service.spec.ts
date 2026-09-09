@@ -71,7 +71,9 @@ describe('AdminService', () => {
         .mockResolvedValueOnce(7) // active30d
         .mockResolvedValueOnce(6) // free
         .mockResolvedValueOnce(3) // pro
-        .mockResolvedValueOnce(1); // pro annual
+        .mockResolvedValueOnce(1) // pro annual
+        .mockResolvedValueOnce(2) // pro trial
+        .mockResolvedValueOnce(2); // pro paid
       prisma.job.count
         .mockResolvedValueOnce(40) // totalJobs
         .mockResolvedValueOnce(12) // jobs30d
@@ -92,6 +94,23 @@ describe('AdminService', () => {
         FREE: 6,
         PRO: 3,
         PRO_ANNUAL: 1,
+      });
+      expect(result.users.proTrial).toBe(2);
+      expect(result.users.proPaid).toBe(2);
+      expect(prisma.user.count).toHaveBeenNthCalledWith(9, {
+        where: {
+          deleted_at: null,
+          plan: { in: ['PRO', 'PRO_ANNUAL'] },
+          lemon_squeezy_subscription_id: null,
+          plan_expires_at: { not: null },
+        },
+      });
+      expect(prisma.user.count).toHaveBeenNthCalledWith(10, {
+        where: {
+          deleted_at: null,
+          plan: { in: ['PRO', 'PRO_ANNUAL'] },
+          lemon_squeezy_subscription_id: { not: null },
+        },
       });
       expect(result.jobs.total).toBe(40);
       expect(result.jobs.byStatus).toEqual([{ status: 'CONFIRMED', count: 5 }]);

@@ -248,6 +248,14 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsString()
   state?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Dismiss the "Finish setting up" checklist banner',
+  })
+  @IsOptional()
+  @IsBoolean()
+  setupChecklistDismissed?: boolean;
 }
 
 export class ChangePasswordDto {
@@ -363,6 +371,7 @@ export class UsersController {
       paymentInfo: dto.paymentInfo,
       state: dto.state,
       notificationPrefs: dto.notificationPrefs,
+      setupChecklistDismissed: dto.setupChecklistDismissed,
     });
 
     if (dto.signing_defaults && Array.isArray(dto.signing_defaults)) {

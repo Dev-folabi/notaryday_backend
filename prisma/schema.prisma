@@ -68,6 +68,7 @@ enum BookingStatus {
 }
 
 enum NotificationType {
+  WELCOME
   BOOKING_RECEIVED
   BOOKING_CONFIRMED
   BOOKING_DECLINED
