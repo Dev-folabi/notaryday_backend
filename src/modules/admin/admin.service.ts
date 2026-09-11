@@ -14,6 +14,7 @@ import {
   QUEUE_NOTIFICATION,
   QUEUE_CALENDAR_SYNC,
   QUEUE_BILLING_WEBHOOK,
+  QUEUE_MARKETING,
 } from '../../queues/queue.constants';
 
 const SAFE_USER_SELECT = {
@@ -46,6 +47,7 @@ export class AdminService {
     @InjectQueue(QUEUE_NOTIFICATION) private readonly notificationQueue: Queue,
     @InjectQueue(QUEUE_CALENDAR_SYNC) private readonly calendarQueue: Queue,
     @InjectQueue(QUEUE_BILLING_WEBHOOK) private readonly billingQueue: Queue,
+    @InjectQueue(QUEUE_MARKETING) private readonly marketingQueue: Queue,
   ) {}
 
   // ----- Overview -----
@@ -400,6 +402,7 @@ export class AdminService {
       QUEUE_NOTIFICATION,
       QUEUE_CALENDAR_SYNC,
       QUEUE_BILLING_WEBHOOK,
+      QUEUE_MARKETING,
     ];
     const queues = [
       this.jobImportQueue,
@@ -407,6 +410,7 @@ export class AdminService {
       this.notificationQueue,
       this.calendarQueue,
       this.billingQueue,
+      this.marketingQueue,
     ];
 
     const queueStats: Record<string, unknown> = {};

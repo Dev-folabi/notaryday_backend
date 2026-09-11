@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { MarketingEventsEmitter } from '../marketing/events/marketing-events.emitter';
 
 export interface LemonSqueezyAttributes {
   variant_id: number;
@@ -50,6 +51,7 @@ export class BillingService {
     private readonly notifications: NotificationsService,
     private readonly emailRenderer: EmailRendererService,
     private readonly analytics: AnalyticsService,
+    private readonly marketingEvents: MarketingEventsEmitter,
   ) {}
 
   /**
@@ -224,6 +226,33 @@ export class BillingService {
   }
 
   /**
+   * Marketing conversion event for Pro upgrades (lead → Pro conversion).
+   * Fire-and-forget; never affects the webhook result.
+   */
+  private async emitProConversion(
+    userId: string,
+    plan: string,
+    knownEmail?: string,
+  ): Promise<void> {
+    try {
+      if (plan !== 'PRO' && plan !== 'PRO_ANNUAL') return;
+      const email =
+        knownEmail ??
+        (
+          await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { email: true },
+          })
+        )?.email;
+      if (email) {
+        this.marketingEvents.conversion({ email, userId, kind: 'pro' });
+      }
+    } catch {
+      // never break billing on marketing tracking
+    }
+  }
+
+  /**
    * Verify Lemon Squeezy webhook signature
    */
   verifyWebhookSignature(payload: string, signature: string): boolean {
@@ -273,6 +302,7 @@ export class BillingService {
       action: 'created',
       plan,
     });
+    await this.emitProConversion(userId, plan);
     return { processed: true };
   }
 
@@ -318,6 +348,7 @@ export class BillingService {
         plan,
         status: attributes.status,
       });
+      await this.emitProConversion(user.id, plan, user.email);
     }
 
     return { processed: true };

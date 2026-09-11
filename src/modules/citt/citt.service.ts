@@ -10,6 +10,7 @@ import { calculateProfitability } from '../../common/utils/profitability.util';
 import { CittCheckDto } from './dto/citt-check.dto';
 import { JobStatus, SigningType } from '../../../generated/prisma';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { MarketingEventsEmitter } from '../marketing/events/marketing-events.emitter';
 
 /** CITT verdict thresholds */
 const MIN_GAP_MINS = 10;
@@ -58,6 +59,7 @@ export class CittService {
     private readonly jobsService: JobsService,
     private readonly ors: OrsService,
     private readonly analytics: AnalyticsService,
+    private readonly marketingEvents: MarketingEventsEmitter,
   ) {}
 
   async runCheck(userId: string, dto: CittCheckDto): Promise<CittResult> {
@@ -304,6 +306,23 @@ export class CittService {
 
     await this.cacheResult(cacheKey, result);
     this.analytics.track('citt_checked', userId, { verdict: result.verdict });
+
+    // Marketing conversion event (lead → CITT activation)
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      });
+      if (user?.email) {
+        this.marketingEvents.conversion({
+          email: user.email,
+          userId,
+          kind: 'citt',
+        });
+      }
+    } catch {
+      // conversion tracking must never break the CITT result
+    }
     return result;
   }
 

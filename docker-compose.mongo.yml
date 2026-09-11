@@ -1,0 +1,13 @@
+# Dev-only: local MongoDB for the marketing/CRM module.
+# Usage: docker compose -f docker-compose.mongo.yml up -d
+services:
+  marketing-mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - marketing_mongo_data:/data/db
+
+volumes:
+  marketing_mongo_data:

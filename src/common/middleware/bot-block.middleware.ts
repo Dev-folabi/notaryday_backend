@@ -8,7 +8,7 @@ import { Request, Response, NextFunction } from 'express';
  * Guards unauthenticated human-facing endpoints (auth, public booking page,
  * username checks) against known automation frameworks and scrapers. Requests
  * carrying a Bearer token are already gated by the AuthGuard, and server-to-
- * server callers (webhooks, health checks, OAuth callbacks, ICS feeds) are
+ * server-to-server callers (webhooks, health checks, OAuth callbacks, ICS feeds) are
  * explicitly skipped.
  *
  * Behavior is env-driven:
@@ -28,6 +28,7 @@ export class BotBlockMiddleware implements NestMiddleware {
   private static readonly SKIP_PATH_PATTERNS: RegExp[] = [
     /^\/(api\/v1\/)?health$/,
     /\/billing\/webhook/,
+    /\/marketing\/webhooks\/(resend|brevo)/,
     /\/imports\/inbound/,
     /\/calendar\/auth\/google\/callback/,
     /\/calendar\/[^/]+\/feed\.ics$/,

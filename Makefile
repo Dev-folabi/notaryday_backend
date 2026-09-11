@@ -21,6 +21,12 @@ start:
 worker:
 	npm run start:worker
 
+marketing-worker: 
+	npm run start:marketing-worker
+
+dev-marketing-worker:
+	npm run start:dev:marketing-worker
+
 lint:
 	npm run lint
 

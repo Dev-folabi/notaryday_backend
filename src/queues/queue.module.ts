@@ -6,6 +6,7 @@ import {
   QUEUE_NOTIFICATION,
   QUEUE_CALENDAR_SYNC,
   QUEUE_BILLING_WEBHOOK,
+  QUEUE_MARKETING,
 } from './queue.constants';
 
 @Module({
@@ -16,6 +17,7 @@ import {
       { name: QUEUE_NOTIFICATION },
       { name: QUEUE_CALENDAR_SYNC },
       { name: QUEUE_BILLING_WEBHOOK },
+      { name: QUEUE_MARKETING },
     ),
   ],
   exports: [BullModule],

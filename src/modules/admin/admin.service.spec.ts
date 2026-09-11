@@ -39,6 +39,7 @@ describe('AdminService', () => {
     notification: { name: 'notification', getJobCounts: jest.fn() },
     calendar: { name: 'calendar-sync', getJobCounts: jest.fn() },
     billing: { name: 'billing-webhook', getJobCounts: jest.fn() },
+    marketing: { name: 'marketing', getJobCounts: jest.fn() },
   };
 
   beforeEach(async () => {
@@ -56,6 +57,7 @@ describe('AdminService', () => {
         { provide: 'BullQueue_notification', useValue: queues.notification },
         { provide: 'BullQueue_calendar-sync', useValue: queues.calendar },
         { provide: 'BullQueue_billing-webhook', useValue: queues.billing },
+        { provide: 'BullQueue_marketing', useValue: queues.marketing },
       ],
     }).compile();
     service = module.get<AdminService>(AdminService);
@@ -233,6 +235,7 @@ describe('AdminService', () => {
       queues.notification.getJobCounts.mockResolvedValue({ waiting: 1 });
       queues.calendar.getJobCounts.mockResolvedValue({ waiting: 0 });
       queues.billing.getJobCounts.mockResolvedValue({ waiting: 0 });
+      queues.marketing.getJobCounts.mockResolvedValue({ waiting: 0 });
 
       prisma.jobImport.count.mockResolvedValue(2);
       prisma.jobImport.groupBy.mockResolvedValue([

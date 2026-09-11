@@ -62,6 +62,22 @@ export const r2Config = registerAs('r2', () => ({
   bucketName: process.env.R2_BUCKET_NAME ?? 'notaryday-uploads',
 }));
 
+export const marketingConfig = registerAs('marketing', () => ({
+  mongoUri: process.env.MONGODB_URI!,
+  credentialsKey: process.env.MARKETING_CREDENTIALS_KEY!,
+  webhookSecretResend: process.env.MARKETING_WEBHOOK_SECRET_RESEND ?? '',
+  webhookSecretBrevo: process.env.MARKETING_WEBHOOK_SECRET_BREVO ?? '',
+  // Base URL used for tracking pixels / click redirects / unsubscribe links.
+  // Must point at the API itself (e.g. https://api.notaryday.app), not the frontend.
+  publicBaseUrl:
+    process.env.MARKETING_PUBLIC_BASE_URL ||
+    process.env.APP_URL ||
+    'http://localhost:4000',
+  unsubBaseUrl:
+    process.env.MARKETING_UNSUB_BASE_URL || process.env.APP_URL || '',
+  physicalAddress: process.env.MARKETING_PHYSICAL_ADDRESS ?? '',
+}));
+
 export default [
   databaseConfig,
   redisConfig,
@@ -74,4 +90,5 @@ export default [
   lemonSqueezyConfig,
   googleConfig,
   r2Config,
+  marketingConfig,
 ];

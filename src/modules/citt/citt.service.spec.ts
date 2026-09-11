@@ -7,6 +7,7 @@ import { UserSettingsService } from '../users/user-settings.service';
 import { JobsService } from '../jobs/jobs.service';
 import { OrsService } from '../../common/services/ors.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { MarketingEventsEmitter } from '../marketing/events/marketing-events.emitter';
 
 describe('CittService', () => {
   let service: CittService;
@@ -29,6 +30,10 @@ describe('CittService', () => {
           },
         },
         { provide: AnalyticsService, useValue: { track: jest.fn() } },
+        {
+          provide: MarketingEventsEmitter,
+          useValue: { conversion: jest.fn() },
+        },
       ],
     }).compile();
 

@@ -90,6 +90,55 @@ async function bootstrap() {
       .addTag('Email Templates', 'Custom email template management')
       .addTag('Job Import', 'Parse jobs from forwarded emails or screenshots')
       .addTag('Journal', 'Notarial journal entries')
+      .addTag('Admin', 'Admin console endpoints (ADMIN role only)')
+      .addTag(
+        'Marketing Overview',
+        'Marketing/CRM dashboard overview (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Leads',
+        'Lead CRM: list/filter/edit leads & sequence messages (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Providers',
+        'Email provider accounts for campaigns (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Imports',
+        'Lead spreadsheet imports: xlsx/csv upload + mapping (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Campaigns',
+        'Campaigns, scheduling/pacing, recipients & direct sends (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Suppressions',
+        'Unsubscribe/bounce/complaint suppression list (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Tracking',
+        'Public open pixel, click redirect & unsubscribe endpoints (no auth)',
+      )
+      .addTag(
+        'Marketing Webhooks',
+        'Provider delivery webhooks: Resend (Svix) & Brevo (unsigned — bearer/url-secret verified), no auth',
+      )
+      .addTag(
+        'Marketing Analytics',
+        'Dashboards, funnel, A/B test aggregates & lead timelines (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Waves',
+        'Campaign wave planning & progress (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Tasks',
+        'Social/phone outreach task queue (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Playbooks',
+        'Outreach playbook angles (ADMIN role only)',
+      )
       .addTag('Health', 'Health check')
       .build();
     const document = SwaggerModule.createDocument(app, swaggerConfig);
