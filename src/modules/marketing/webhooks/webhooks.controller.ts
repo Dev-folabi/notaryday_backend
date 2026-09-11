@@ -47,9 +47,8 @@ function toStr(value: unknown): string | undefined {
 }
 
 /**
- * Delivery/engagement webhooks from email providers. Resend is verified with
- * Svix; Brevo does NOT sign its webhooks, so a shared secret we control is
- * verified instead (Bearer token, URL query secret, or legacy HMAC).
+ * Delivery/engagement webhooks from email providers. Resend is verified
+ * with Svix; Brevo does NOT sign its webhooks so verification is optional.
  */
 @ApiTags('Marketing Webhooks')
 @SkipThrottle()
@@ -115,15 +114,14 @@ export class WebhooksController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      'Brevo delivery events webhook (unsigned — bearer/url-secret verified)',
+      'Brevo delivery events webhook (unsigned — no verification, shared secret optional)',
   })
   async brevo(
     @Req() request: RawBodyRequest<Request>,
     @Headers('authorization') authorization: string | undefined,
-    @Headers('x-brevo-signature') signature: string | undefined,
     @Body() body: Record<string, unknown> | Record<string, unknown>[],
   ) {
-    if (!this.verifyBrevo(request, authorization, signature)) {
+    if (!this.verifyBrevo(request, authorization)) {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
@@ -231,11 +229,11 @@ export class WebhooksController {
   /**
    * Brevo does NOT sign its webhooks (no HMAC, no JWT — Brevo's own docs list
    * only Basic-auth-in-URL and IP allowlisting as hardening).
+   * When a secret is configured, verify it via Bearer token or URL query param.
    */
   private verifyBrevo(
     request: RawBodyRequest<Request>,
     authorization: string | undefined,
-    signature: string | undefined,
   ): boolean {
     const secret =
       this.config.get<string>('marketing.webhookSecretBrevo', {
@@ -248,19 +246,14 @@ export class WebhooksController {
       return this.timingSafe(auth.slice(7).trim(), secret);
     }
 
-    // (2) URL query secret
+    // (2) Basic auth (Brevo supports Basic-auth-in-URL)
+    if (auth.startsWith('Basic ')) {
+      return this.timingSafe(auth.slice(6).trim(), secret);
+    }
+
+    // (3) URL query secret
     const urlSecret = (request.query?.secret as string | undefined) ?? '';
     if (urlSecret) return this.timingSafe(urlSecret, secret);
-
-    // (3) Legacy HMAC over the raw body
-    if (signature && request.rawBody) {
-      const digest = createHmac('sha256', secret)
-        .update(request.rawBody)
-        .digest('hex');
-      const a = Buffer.from(signature.trim());
-      const b = Buffer.from(digest);
-      return a.length === b.length && timingSafeEqual(a, b);
-    }
 
     return false;
   }

@@ -2,7 +2,6 @@
 
 import { RawBodyRequest, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'node:crypto';
 import type { Request } from 'express';
 
 import { WebhooksController } from './webhooks.controller';
@@ -39,15 +38,10 @@ describe('WebhooksController', () => {
   it('accepts a Brevo webhook authenticated with a Bearer token', async () => {
     const body = JSON.stringify({ event: 'delivered', email: 'a@b.com' });
     await expect(
-      controller.brevo(
-        mockRequest(body),
-        'Bearer test-brevo-secret',
-        undefined,
-        {
-          event: 'delivered',
-          email: 'a@b.com',
-        },
-      ),
+      controller.brevo(mockRequest(body), 'Bearer test-brevo-secret', {
+        event: 'delivered',
+        email: 'a@b.com',
+      }),
     ).resolves.toEqual({ received: true });
     expect(queueAdd).toHaveBeenCalledWith(
       'process-webhook-event',
@@ -66,7 +60,6 @@ describe('WebhooksController', () => {
       controller.brevo(
         mockRequest(body, { secret: 'test-brevo-secret' }),
         undefined,
-        undefined,
         { event: 'opened', email: 'a@b.com' },
       ),
     ).resolves.toEqual({ received: true });
@@ -78,13 +71,10 @@ describe('WebhooksController', () => {
     );
   });
 
-  it('accepts a legacy x-brevo-signature HMAC over the raw body', async () => {
+  it('accepts a Brevo webhook authenticated with Basic auth', async () => {
     const body = JSON.stringify({ event: 'hard_bounce', email: 'a@b.com' });
-    const sig = createHmac('sha256', 'test-brevo-secret')
-      .update(Buffer.from(body, 'utf8'))
-      .digest('hex');
     await expect(
-      controller.brevo(mockRequest(body), undefined, sig, {
+      controller.brevo(mockRequest(body), 'Basic test-brevo-secret', {
         event: 'hard_bounce',
         email: 'a@b.com',
       }),
@@ -97,10 +87,29 @@ describe('WebhooksController', () => {
     );
   });
 
+  it('accepts Brevo webhooks when no secret is configured', async () => {
+    const noSecretConfig = {
+      get: jest.fn((key: string) => {
+        if (key === 'marketing.webhookSecretBrevo') return '';
+        if (key === 'marketing.webhookSecretResend') return '';
+        if (key === 'NODE_ENV') return 'test';
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+    const ctrl = new WebhooksController(noSecretConfig, queue);
+    const body = JSON.stringify({ event: 'delivered', email: 'a@b.com' });
+    await expect(
+      ctrl.brevo(mockRequest(body), undefined, {
+        event: 'delivered',
+        email: 'a@b.com',
+      }),
+    ).resolves.toEqual({ received: true });
+  });
+
   it('rejects a Brevo webhook with no valid credential', async () => {
     const body = JSON.stringify({ event: 'delivered', email: 'a@b.com' });
     await expect(
-      controller.brevo(mockRequest(body), undefined, undefined, {
+      controller.brevo(mockRequest(body), undefined, {
         event: 'delivered',
         email: 'a@b.com',
       }),
@@ -111,7 +120,7 @@ describe('WebhooksController', () => {
   it('rejects a Brevo webhook with a wrong Bearer token', async () => {
     const body = JSON.stringify({ event: 'delivered', email: 'a@b.com' });
     await expect(
-      controller.brevo(mockRequest(body), 'Bearer wrong', undefined, {
+      controller.brevo(mockRequest(body), 'Bearer wrong', {
         event: 'delivered',
         email: 'a@b.com',
       }),
@@ -131,7 +140,6 @@ describe('WebhooksController', () => {
       await controller.brevo(
         mockRequest(body, { secret: 'test-brevo-secret' }),
         undefined,
-        undefined,
         { event, email: 'a@b.com' },
       );
       expect(queueAdd).toHaveBeenCalledWith(
@@ -148,7 +156,6 @@ describe('WebhooksController', () => {
     await controller.brevo(
       mockRequest(body, { secret: 'test-brevo-secret' }),
       undefined,
-      undefined,
       { event: 'contact_updated', email: 'a@b.com' },
     );
     expect(queueAdd).not.toHaveBeenCalled();
@@ -161,7 +168,6 @@ describe('WebhooksController', () => {
     ];
     await controller.brevo(
       mockRequest(JSON.stringify(payload), { secret: 'test-brevo-secret' }),
-      undefined,
       undefined,
       payload,
     );

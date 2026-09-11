@@ -47,9 +47,9 @@ export class TrackingController {
   @Header('Content-Type', 'image/gif')
   @Header('Cache-Control', 'no-store, max-age=0')
   @ApiOperation({ summary: 'Open tracking pixel (1x1 gif)' })
-  async pixel(@Param('id') id: string) {
+  async pixel(@Param('id') id: string, @Res() res: Response) {
     await this.tracking.recordOpen(id).catch(() => undefined);
-    return TRACKING_PIXEL_GIF;
+    res.type('image/gif').send(TRACKING_PIXEL_GIF);
   }
 
   @Public()
@@ -64,7 +64,7 @@ export class TrackingController {
     const url = await this.tracking
       .recordClick(id, target, FALLBACK_URL)
       .catch(() => FALLBACK_URL);
-    return res.redirect(302, url);
+    res.redirect(302, url);
   }
 
   @Public()
@@ -73,9 +73,9 @@ export class TrackingController {
   @HttpCode(200)
   @Header('Content-Type', 'text/html; charset=utf-8')
   @ApiOperation({ summary: 'Unsubscribe page (link click)' })
-  async unsubPage(@Param('token') token: string) {
+  async unsubPage(@Param('token') token: string, @Res() res: Response) {
     const ok = await this.tracking.unsubscribe(token).catch(() => false);
-    return unsubPage(ok);
+    res.type('text/html; charset=utf-8').send(unsubPage(ok));
   }
 
   @Public()
@@ -86,8 +86,8 @@ export class TrackingController {
   @ApiOperation({
     summary: 'RFC 8058 one-click unsubscribe (List-Unsubscribe-Post)',
   })
-  async unsubOneClick(@Param('token') token: string) {
+  async unsubOneClick(@Param('token') token: string, @Res() res: Response) {
     const ok = await this.tracking.unsubscribe(token).catch(() => false);
-    return unsubPage(ok);
+    res.type('text/html; charset=utf-8').send(unsubPage(ok));
   }
 }
