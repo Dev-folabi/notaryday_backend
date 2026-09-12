@@ -11,9 +11,7 @@ import {
   Headers,
   UnauthorizedException,
 } from '@nestjs/common';
-import type {
-  RawBodyRequest,
-} from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import {
   ApiTags,
