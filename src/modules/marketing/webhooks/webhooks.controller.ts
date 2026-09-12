@@ -240,6 +240,9 @@ export class WebhooksController {
         infer: true,
       }) ?? '';
 
+    // If no secret is configured, accept the webhook (no verification needed)
+    if (!secret) return true;
+
     // (1) Bearer token
     const auth = authorization?.trim() ?? '';
     if (auth.startsWith('Bearer ')) {
