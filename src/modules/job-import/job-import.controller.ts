@@ -8,11 +8,13 @@ import {
   UseInterceptors,
   UploadedFile,
   Req,
-  RawBodyRequest,
   Headers,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type {
+  RawBodyRequest,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,

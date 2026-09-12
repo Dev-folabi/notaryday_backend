@@ -16,7 +16,7 @@ import {
   ApiParam,
   ApiExcludeEndpoint,
 } from '@nestjs/swagger';
-import { Response, Request } from 'express';
+import type { Response, Request } from 'express';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PlanGuard } from '../../common/guards/plan.guard';
 import { Public } from '../../common/decorators/public.decorator';

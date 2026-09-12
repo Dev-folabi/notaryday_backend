@@ -1,6 +1,6 @@
 import { Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bull';
+import type { Job } from 'bull';
 import { PrismaService } from '../config/prisma.service';
 import { QUEUE_CALENDAR_SYNC } from '../queues/queue.constants';
 import { CalendarService } from '../modules/calendar/calendar.service';

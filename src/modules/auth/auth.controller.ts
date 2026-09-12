@@ -17,14 +17,15 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { Public } from '../../common/decorators/public.decorator';
-import { AuthGuard, RequestWithUser } from '../../common/guards/auth.guard';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import type { RequestWithUser } from '../../common/guards/auth.guard';
 import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { User } from 'generated/prisma';
+import type { User } from 'generated/prisma';
 
 class RegisterDto {
   @ApiProperty({ example: 'notary@example.com' })

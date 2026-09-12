@@ -21,7 +21,7 @@ import {
   Prisma,
 } from '../../../generated/prisma';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import {
   QUEUE_CALENDAR_SYNC,
   QUEUE_NOTIFICATION,

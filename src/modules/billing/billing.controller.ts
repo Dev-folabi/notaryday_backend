@@ -15,7 +15,7 @@ import {
 import { BillingService } from './billing.service';
 import { CreateCheckoutDto } from './dto/billing.dto';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
+import type { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 
 @ApiTags('Billing')
 @ApiBearerAuth()

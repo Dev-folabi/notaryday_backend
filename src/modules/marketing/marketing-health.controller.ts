@@ -1,6 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';

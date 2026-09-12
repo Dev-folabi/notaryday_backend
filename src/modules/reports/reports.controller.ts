@@ -18,7 +18,7 @@ import {
   ApiQuery,
   ApiParam,
 } from '@nestjs/swagger';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PlanGuard } from '../../common/guards/plan.guard';
 import { RequiresPro } from '../../common/decorators/requires-pro.decorator';

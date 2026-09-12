@@ -5,15 +5,15 @@ import {
   HttpCode,
   Logger,
   Post,
-  RawBodyRequest,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { Public } from '../../../common/decorators/public.decorator';

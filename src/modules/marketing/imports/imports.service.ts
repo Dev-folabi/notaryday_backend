@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { Model, Types } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
 import { QUEUE_MARKETING } from '../../../queues/queue.constants';
