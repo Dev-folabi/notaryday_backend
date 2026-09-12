@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { PrismaService } from '../../config/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { PlanTier, Prisma } from '../../../generated/prisma';

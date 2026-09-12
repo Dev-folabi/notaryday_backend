@@ -1,6 +1,6 @@
 import { IsEnum, IsString, IsEmail, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { TransactionalProviderType } from '../../transactional-email/interface';
+import type { TransactionalProviderType } from '../../transactional-email/interface';
 
 export class SetActiveEmailProviderDto {
   @ApiProperty({ enum: ['resend', 'brevo'], example: 'resend' })

@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { InjectQueue, Process, Processor } from '@nestjs/bull';
-import { Job, Queue } from 'bull';
+import type { Job, Queue } from 'bull';
 import { QUEUE_MARKETING } from '../../queues/queue.constants';
 import { ImportIngestService } from './services/import-ingest.service';
 import { SendEmailService } from './services/send-email.service';
@@ -36,8 +36,6 @@ export class MarketingProcessor {
 
   @Process('send-email')
   async handleSend(job: Job<{ recipientId: string }>) {
-    // BullMQ: attemptsMade is 0-based during execution (0 on first run),
-    // so the final attempt is attemptsMade === attempts - 1.
     const attempts = job.opts.attempts ?? 3;
     const isFinalAttempt = job.attemptsMade >= attempts - 1;
     try {
