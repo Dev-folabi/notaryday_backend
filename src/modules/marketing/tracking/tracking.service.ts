@@ -64,8 +64,7 @@ export class TrackingService {
   ) {
     let url = target ?? '';
     try {
-      const decoded = decodeURIComponent(url);
-      const parsed = new URL(decoded);
+      const parsed = new URL(url);
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
         throw new Error('bad protocol');
       }

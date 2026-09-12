@@ -29,6 +29,7 @@ export class BotBlockMiddleware implements NestMiddleware {
     /^\/(api\/v1\/)?health$/,
     /\/billing\/webhook/,
     /\/marketing\/webhooks\/(resend|brevo)/,
+    /\/marketing\/(t|c|u)\//,
     /\/imports\/inbound/,
     /\/calendar\/auth\/google\/callback/,
     /\/calendar\/[^/]+\/feed\.ics$/,
@@ -115,7 +116,9 @@ export class BotBlockMiddleware implements NestMiddleware {
       return next();
     }
 
-    if (BotBlockMiddleware.isSkippedPath(request.path)) {
+    const originalUrl = request.originalUrl || request.url;
+
+    if (BotBlockMiddleware.isSkippedPath(originalUrl)) {
       return next();
     }
 
@@ -155,15 +158,17 @@ export class BotBlockMiddleware implements NestMiddleware {
     detail: string,
     pattern?: RegExp,
   ): void {
+    const originalUrl = request.originalUrl || request.url;
+
     if (this.dryRun) {
       this.logger.warn(
-        `[DRY_RUN] would block ${request.method} ${request.path} from ${ip}: ${detail}`,
+        `[DRY_RUN] would block ${request.method} ${originalUrl} from ${ip}: ${detail}`,
       );
       return next();
     }
 
     this.logger.warn(
-      `Blocked ${request.method} ${request.path} from ${ip}: ${detail}${
+      `Blocked ${request.method} ${originalUrl} from ${ip}: ${detail}${
         pattern ? ` (matched /${pattern.source}/)` : ''
       }`,
     );
@@ -173,7 +178,7 @@ export class BotBlockMiddleware implements NestMiddleware {
       message: 'Access denied: automated request blocked',
       statusCode: 403,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: originalUrl,
     };
 
     response.status(403).json({ success: false, error: errorResponse });

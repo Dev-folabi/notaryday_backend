@@ -35,8 +35,37 @@ async function bootstrap() {
       configService.get<string>('APP_URL') ?? 'http://localhost:3000',
     );
   }
+  // In development, allow all localhost/127.0.0.1 origins for flexibility
+  // (covers frontend, admin, API testing, and email client dev tools)
+  if (!isProduction) {
+    const isLocalOrigin = (origin: string) =>
+      /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    const existingLocal = corsOrigins.filter(isLocalOrigin);
+    if (existingLocal.length === 0) {
+      corsOrigins.push('http://localhost:3000', 'http://127.0.0.1:3000');
+    }
+  }
   app.enableCors({
-    origin: corsOrigins,
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow: boolean) => void,
+    ) => {
+      // Allow requests with no Origin header (e.g., curl, mobile apps)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      const isAllowed = corsOrigins.includes(origin);
+      if (!isProduction) {
+        const isLocalOrigin =
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (isLocalOrigin) {
+          callback(null, true);
+          return;
+        }
+      }
+      callback(null, isAllowed);
+    },
     credentials: true,
   });
   logger.log(`CORS enabled for origins: ${corsOrigins.join(', ')}`);
