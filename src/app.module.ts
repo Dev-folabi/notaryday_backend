@@ -12,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { TransactionalEmailModule } from './modules/transactional-email/transactional-email.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -32,6 +33,7 @@ import { JournalModule } from './modules/journal/journal.module';
 import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
 
 @Module({
   imports: [
@@ -72,6 +74,7 @@ import { AdminModule } from './modules/admin/admin.module';
     AuthModule,
     UsersModule,
     HealthModule,
+    TransactionalEmailModule,
     NotificationsModule,
     BillingModule,
     GeocodingModule,
@@ -88,6 +91,7 @@ import { AdminModule } from './modules/admin/admin.module';
     JournalModule,
     EmailTemplatesModule,
     AdminModule,
+    MarketingModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

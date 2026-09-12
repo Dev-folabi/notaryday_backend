@@ -8,6 +8,7 @@ import { PrismaModule } from '../../config/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { BullModule } from '@nestjs/bull';
 import { QUEUE_BILLING_WEBHOOK } from '../../queues/queue.constants';
+import { MarketingEventsModule } from '../marketing/events/marketing-events.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { QUEUE_BILLING_WEBHOOK } from '../../queues/queue.constants';
     UsersModule,
     NotificationsModule,
     BullModule.registerQueue({ name: QUEUE_BILLING_WEBHOOK }),
+    MarketingEventsModule,
   ],
   providers: [BillingService],
   controllers: [BillingController, BillingWebhookController],

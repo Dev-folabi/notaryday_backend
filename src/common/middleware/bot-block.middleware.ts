@@ -8,7 +8,7 @@ import { Request, Response, NextFunction } from 'express';
  * Guards unauthenticated human-facing endpoints (auth, public booking page,
  * username checks) against known automation frameworks and scrapers. Requests
  * carrying a Bearer token are already gated by the AuthGuard, and server-to-
- * server callers (webhooks, health checks, OAuth callbacks, ICS feeds) are
+ * server-to-server callers (webhooks, health checks, OAuth callbacks, ICS feeds) are
  * explicitly skipped.
  *
  * Behavior is env-driven:
@@ -28,6 +28,8 @@ export class BotBlockMiddleware implements NestMiddleware {
   private static readonly SKIP_PATH_PATTERNS: RegExp[] = [
     /^\/(api\/v1\/)?health$/,
     /\/billing\/webhook/,
+    /\/marketing\/webhooks\/(resend|brevo)/,
+    /\/marketing\/(t|c|u)\//,
     /\/imports\/inbound/,
     /\/calendar\/auth\/google\/callback/,
     /\/calendar\/[^/]+\/feed\.ics$/,
@@ -114,7 +116,9 @@ export class BotBlockMiddleware implements NestMiddleware {
       return next();
     }
 
-    if (BotBlockMiddleware.isSkippedPath(request.path)) {
+    const originalUrl = request.originalUrl || request.url;
+
+    if (BotBlockMiddleware.isSkippedPath(originalUrl)) {
       return next();
     }
 
@@ -154,15 +158,17 @@ export class BotBlockMiddleware implements NestMiddleware {
     detail: string,
     pattern?: RegExp,
   ): void {
+    const originalUrl = request.originalUrl || request.url;
+
     if (this.dryRun) {
       this.logger.warn(
-        `[DRY_RUN] would block ${request.method} ${request.path} from ${ip}: ${detail}`,
+        `[DRY_RUN] would block ${request.method} ${originalUrl} from ${ip}: ${detail}`,
       );
       return next();
     }
 
     this.logger.warn(
-      `Blocked ${request.method} ${request.path} from ${ip}: ${detail}${
+      `Blocked ${request.method} ${originalUrl} from ${ip}: ${detail}${
         pattern ? ` (matched /${pattern.source}/)` : ''
       }`,
     );
@@ -172,7 +178,7 @@ export class BotBlockMiddleware implements NestMiddleware {
       message: 'Access denied: automated request blocked',
       statusCode: 403,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: originalUrl,
     };
 
     response.status(403).json({ success: false, error: errorResponse });

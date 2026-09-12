@@ -1,6 +1,6 @@
 import { Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bull';
+import type { Job } from 'bull';
 import { PrismaService } from '../config/prisma.service';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { UserSettingsService } from '../modules/users/user-settings.service';

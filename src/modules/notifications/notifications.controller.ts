@@ -18,7 +18,7 @@ import {
 import { NotificationsService } from './notifications.service';
 import { SendNotificationDto } from './dto/send-notification.dto';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
+import type { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 import {
   PushSubscriptionDto,
   RemovePushSubscriptionDto,

@@ -31,9 +31,15 @@ export const validationSchema = Joi.object({
   EXTRACTION_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.7),
 
   // Resend
-  RESEND_API_KEY: Joi.string().required(),
+  RESEND_API_KEY: Joi.string().allow('').default(''),
   RESEND_IMPORT_DOMAIN: Joi.string().default('inbound.notaryday.app'),
   RESEND_WEBHOOK_SECRET: Joi.string().allow('').default(''),
+  RESEND_FROM_ADDRESS: Joi.string().allow('').default(''),
+
+  // Brevo (alternative transactional email provider)
+  BREVO_API_KEY: Joi.string().allow('').default(''),
+  BREVO_FROM_ADDRESS: Joi.string().allow('').default(''),
+
   EMAIL_ASSET_BASE_URL: Joi.string().uri().allow('').default(''),
 
   // Native Web Push (optional; generate once with `npx web-push generate-vapid-keys`)
@@ -98,4 +104,16 @@ export const validationSchema = Joi.object({
   TRIAL_PLAN: Joi.boolean().default(false),
   TRIAL_DAYS: Joi.number().integer().min(1).default(30),
   SOFT_DELETE_RETENTION_DAYS: Joi.number().integer().min(1).default(90),
+
+  // Marketing / CRM (MongoDB + multi-provider email)
+  MONGODB_URI: Joi.string().uri().required(),
+  MARKETING_CREDENTIALS_KEY: Joi.string().min(32).required(),
+  MARKETING_WEBHOOK_SECRET_RESEND: Joi.string().allow('').default(''),
+  MARKETING_WEBHOOK_SECRET_BREVO: Joi.string().when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(16).required(),
+    otherwise: Joi.string().allow('').default(''),
+  }),
+  MARKETING_PUBLIC_BASE_URL: Joi.string().uri().allow('').default(''),
+  MARKETING_UNSUB_BASE_URL: Joi.string().uri().allow('').default(''),
 });

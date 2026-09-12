@@ -1,31 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
 import { PrismaService } from '../../config/prisma.service';
 import webpush from 'web-push';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
-  private readonly resend: Resend;
-  private readonly fromAddress: string;
   private readonly pushEnabled: boolean;
 
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly emailRenderer: EmailRendererService,
+    private readonly transactionalEmail: TransactionalEmailService,
   ) {
-    const apiKey = this.config.get<string>('RESEND_API_KEY');
-    if (!apiKey) {
-      throw new Error('RESEND_API_KEY is not configured');
-    }
-    this.resend = new Resend(apiKey);
-    this.fromAddress = this.normalizeFromAddress(
-      this.config.get<string>('RESEND_FROM_ADDRESS'),
-    );
-
     const publicKey = this.config.get<string>('WEB_PUSH_VAPID_PUBLIC_KEY');
     const privateKey = this.config.get<string>('WEB_PUSH_VAPID_PRIVATE_KEY');
     const subject = this.config.get<string>('WEB_PUSH_SUBJECT');
@@ -35,29 +25,9 @@ export class NotificationsService {
     }
   }
 
-  private normalizeFromAddress(value: string | undefined): string {
-    const fallback = 'Notary Day <noreply@notaryday.app>';
-    const cleaned = (value ?? '')
-      .trim()
-      .replace(/^['"]+|['"]+$/g, '')
-      .trim();
-    if (!cleaned) return fallback;
-
-    const match = cleaned.match(/^([^<>]*?)\s*<([^<>]+)>$/);
-    const email = (match ? match[2] : cleaned).trim();
-    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
-
-    if (!emailValid) {
-      this.logger.warn(
-        `RESEND_FROM_ADDRESS is not a valid email address ("${cleaned}"); falling back to "${fallback}"`,
-      );
-      return fallback;
-    }
-    return match ? `${match[1].trim()} <${email}>` : email;
-  }
-
   /**
-   * Send a raw email via Resend
+   * Send a transactional email via the active provider (Resend or Brevo),
+   * with automatic fallback to the other provider on failure.
    */
   async sendEmail(options: {
     to: string;
@@ -65,26 +35,7 @@ export class NotificationsService {
     html: string;
     text?: string;
   }) {
-    try {
-      const { data, error } = await this.resend.emails.send({
-        from: this.fromAddress,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        text: options.text,
-      });
-
-      if (error) {
-        this.logger.error(`Failed to send email: ${error.message}`);
-        throw new Error(`Failed to send email: ${error.message}`);
-      }
-
-      this.logger.log(`Email sent successfully to ${options.to}`);
-      return data;
-    } catch (error) {
-      this.logger.error(`Error sending email: ${error}`);
-      throw error;
-    }
+    return this.transactionalEmail.send(options);
   }
 
   /**

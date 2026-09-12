@@ -35,8 +35,37 @@ async function bootstrap() {
       configService.get<string>('APP_URL') ?? 'http://localhost:3000',
     );
   }
+  // In development, allow all localhost/127.0.0.1 origins for flexibility
+  // (covers frontend, admin, API testing, and email client dev tools)
+  if (!isProduction) {
+    const isLocalOrigin = (origin: string) =>
+      /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    const existingLocal = corsOrigins.filter(isLocalOrigin);
+    if (existingLocal.length === 0) {
+      corsOrigins.push('http://localhost:3000', 'http://127.0.0.1:3000');
+    }
+  }
   app.enableCors({
-    origin: corsOrigins,
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow: boolean) => void,
+    ) => {
+      // Allow requests with no Origin header (e.g., curl, mobile apps)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      const isAllowed = corsOrigins.includes(origin);
+      if (!isProduction) {
+        const isLocalOrigin =
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (isLocalOrigin) {
+          callback(null, true);
+          return;
+        }
+      }
+      callback(null, isAllowed);
+    },
     credentials: true,
   });
   logger.log(`CORS enabled for origins: ${corsOrigins.join(', ')}`);
@@ -90,6 +119,55 @@ async function bootstrap() {
       .addTag('Email Templates', 'Custom email template management')
       .addTag('Job Import', 'Parse jobs from forwarded emails or screenshots')
       .addTag('Journal', 'Notarial journal entries')
+      .addTag('Admin', 'Admin console endpoints (ADMIN role only)')
+      .addTag(
+        'Marketing Overview',
+        'Marketing/CRM dashboard overview (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Leads',
+        'Lead CRM: list/filter/edit leads & sequence messages (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Providers',
+        'Email provider accounts for campaigns (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Imports',
+        'Lead spreadsheet imports: xlsx/csv upload + mapping (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Campaigns',
+        'Campaigns, scheduling/pacing, recipients & direct sends (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Suppressions',
+        'Unsubscribe/bounce/complaint suppression list (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Tracking',
+        'Public open pixel, click redirect & unsubscribe endpoints (no auth)',
+      )
+      .addTag(
+        'Marketing Webhooks',
+        'Provider delivery webhooks: Resend (Svix) & Brevo (unsigned — bearer/url-secret verified), no auth',
+      )
+      .addTag(
+        'Marketing Analytics',
+        'Dashboards, funnel, A/B test aggregates & lead timelines (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Waves',
+        'Campaign wave planning & progress (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Tasks',
+        'Social/phone outreach task queue (ADMIN role only)',
+      )
+      .addTag(
+        'Marketing Playbooks',
+        'Outreach playbook angles (ADMIN role only)',
+      )
       .addTag('Health', 'Health check')
       .build();
     const document = SwaggerModule.createDocument(app, swaggerConfig);

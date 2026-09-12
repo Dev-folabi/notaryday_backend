@@ -12,6 +12,7 @@ describe('BillingService', () => {
     {} as never,
     {} as never,
     { track: jest.fn() } as never,
+    { conversion: jest.fn() } as never,
   );
 
   beforeEach(() => jest.clearAllMocks());

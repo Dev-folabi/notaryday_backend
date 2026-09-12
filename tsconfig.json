@@ -4,7 +4,7 @@
     "moduleResolution": "NodeNext",
     "resolvePackageJsonExports": true,
     "esModuleInterop": true,
-    "isolatedModules": false,
+    "isolatedModules": true,
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
@@ -22,6 +22,6 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
   },
-  "include": ["src/**/*", "test/**/*", "prisma.config.ts"],
+  "include": ["src/**/*", "test/**/*", "prisma.config.ts", "prisma/seed.ts"],
   "exclude": ["node_modules", "dist"]
 }

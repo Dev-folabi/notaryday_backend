@@ -12,6 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { JwtService } from '@nestjs/jwt';
 import { RedisService } from '../../config/redis.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { MarketingEventsEmitter } from '../marketing/events/marketing-events.emitter';
 
 @Injectable()
 export class AuthService {
@@ -28,6 +29,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
     private readonly analytics: AnalyticsService,
+    private readonly marketingEvents: MarketingEventsEmitter,
   ) {}
 
   async register(data: {
@@ -111,6 +113,13 @@ export class AuthService {
     this.analytics.track('user_registered', user.id, {
       plan: user.plan,
       trial: user.plan_expires_at ? true : false,
+    });
+
+    // Marketing conversion event (lead → signup)
+    this.marketingEvents.conversion({
+      email: user.email,
+      userId: user.id,
+      kind: 'signup',
     });
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email });

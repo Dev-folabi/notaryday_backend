@@ -37,7 +37,7 @@ services:
     command: ["node", "dist/src/main"]
 
   notaryday-worker:
-    image: ghcr.io/dev-folabi/notaryday_backend:latest
+    image: ghcr.io/dev-folibi/notaryday_backend:latest
     restart: unless-stopped
     build:
       context: .
@@ -50,6 +50,23 @@ services:
       migrate:
         condition: service_completed_successfully
     command: ["node", "dist/src/main-worker"]
+    healthcheck:
+      disable: true
+
+  # Marketing/CRM worker — consumes the `marketing` queue against MongoDB.
+  # Runs from the same image, no Postgres dependency.
+  notaryday-marketing-worker:
+    image: ghcr.io/dev-folibi/notaryday_backend:latest
+    restart: unless-stopped
+    build:
+      context: .
+      target: production
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["node", "dist/src/main-marketing-worker"]
     healthcheck:
       disable: true
 

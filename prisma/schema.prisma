@@ -719,3 +719,14 @@ model GeocodeCache {
 
   @@map("geocode_cache")
 }
+
+// PLATFORM-WIDE SYSTEM SETTINGS
+
+model SystemSettings {
+  key        String   @id
+  value      String
+  updatedBy  String?
+  updatedAt  DateTime @updatedAt @db.Timestamptz
+
+  @@map("system_settings")
+}

@@ -6,7 +6,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { PrismaService } from '../../config/prisma.service';
 import { UserSettingsService } from '../users/user-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';

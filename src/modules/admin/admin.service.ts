@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { PrismaService } from '../../config/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { PlanTier, Prisma } from '../../../generated/prisma';
@@ -14,7 +14,14 @@ import {
   QUEUE_NOTIFICATION,
   QUEUE_CALENDAR_SYNC,
   QUEUE_BILLING_WEBHOOK,
+  QUEUE_MARKETING,
 } from '../../queues/queue.constants';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
+import type {
+  TransactionalProviderType,
+  TransactionalSendOptions,
+  TransactionalSendResult,
+} from '../transactional-email/interface';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -41,11 +48,13 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    private readonly transactionalEmail: TransactionalEmailService,
     @InjectQueue(QUEUE_JOB_IMPORT) private readonly jobImportQueue: Queue,
     @InjectQueue(QUEUE_INVOICE) private readonly invoiceQueue: Queue,
     @InjectQueue(QUEUE_NOTIFICATION) private readonly notificationQueue: Queue,
     @InjectQueue(QUEUE_CALENDAR_SYNC) private readonly calendarQueue: Queue,
     @InjectQueue(QUEUE_BILLING_WEBHOOK) private readonly billingQueue: Queue,
+    @InjectQueue(QUEUE_MARKETING) private readonly marketingQueue: Queue,
   ) {}
 
   // ----- Overview -----
@@ -400,6 +409,7 @@ export class AdminService {
       QUEUE_NOTIFICATION,
       QUEUE_CALENDAR_SYNC,
       QUEUE_BILLING_WEBHOOK,
+      QUEUE_MARKETING,
     ];
     const queues = [
       this.jobImportQueue,
@@ -407,6 +417,7 @@ export class AdminService {
       this.notificationQueue,
       this.calendarQueue,
       this.billingQueue,
+      this.marketingQueue,
     ];
 
     const queueStats: Record<string, unknown> = {};
@@ -454,5 +465,33 @@ export class AdminService {
         recent: recentLsEvents,
       },
     };
+  }
+
+  // ----- Email provider settings -----
+
+  async getEmailProviders() {
+    const status = await this.transactionalEmail.getProviderStatus();
+    return {
+      providers: status.providers,
+      active: status.active,
+    };
+  }
+
+  async setActiveEmailProvider(provider: TransactionalProviderType) {
+    await this.prisma.systemSettings.upsert({
+      where: { key: 'transactional_email_provider' },
+      update: { value: provider, updatedAt: new Date() },
+      create: { key: 'transactional_email_provider', value: provider },
+    });
+
+    this.transactionalEmail.clearCache();
+    return { active: provider };
+  }
+
+  async testEmailProvider(
+    provider: TransactionalProviderType,
+    options: TransactionalSendOptions,
+  ): Promise<TransactionalSendResult> {
+    return this.transactionalEmail.testProvider(provider, options);
   }
 }

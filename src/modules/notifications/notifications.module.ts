@@ -4,10 +4,11 @@ import { NotificationsController } from './notifications.controller';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../../config/prisma.module';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
+import { TransactionalEmailModule } from '../transactional-email/transactional-email.module';
 
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule],
+  imports: [ConfigModule, PrismaModule, TransactionalEmailModule],
   providers: [NotificationsService, EmailRendererService],
   controllers: [NotificationsController],
   exports: [NotificationsService, EmailRendererService],

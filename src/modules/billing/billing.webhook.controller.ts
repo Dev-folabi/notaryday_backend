@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
 import { BillingService, LemonSqueezyPayload } from './billing.service';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { QUEUE_BILLING_WEBHOOK } from '../../queues/queue.constants';
 
 @ApiTags('Billing')

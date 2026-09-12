@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bull';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { PrismaService } from '../config/prisma.service';
 import { QUEUE_INVOICE } from '../queues/queue.constants';
 
