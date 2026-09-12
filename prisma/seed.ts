@@ -26,9 +26,10 @@ async function main() {
 
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
-  const email = (process.env.ADMIN_EMAIL ?? 'admin@notaryday.app').toLowerCase();
-  const password =
-    process.env.ADMIN_PASSWORD ?? 'admin-change-me-please-2026';
+  const email = (
+    process.env.ADMIN_EMAIL ?? 'admin@notaryday.app'
+  ).toLowerCase();
+  const password = process.env.ADMIN_PASSWORD ?? 'admin-change-me-please-2026';
   const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
 
   const admin = await prisma.user.upsert({
@@ -59,8 +60,25 @@ async function main() {
     );
   }
 
+  await upsertSystemSettings(prisma);
+
   await prisma.$disconnect();
   await pool.end();
+}
+
+async function upsertSystemSettings(prisma: PrismaClient) {
+  const settings: Record<string, string> = {
+    transactional_email_provider: 'resend',
+  };
+
+  for (const [key, value] of Object.entries(settings)) {
+    await prisma.systemSettings.upsert({
+      where: { key },
+      update: { value },
+      create: { key, value },
+    });
+  }
+  console.log('✅ System settings ready');
 }
 
 main().catch((error) => {

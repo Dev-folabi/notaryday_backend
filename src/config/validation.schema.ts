@@ -31,9 +31,15 @@ export const validationSchema = Joi.object({
   EXTRACTION_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.7),
 
   // Resend
-  RESEND_API_KEY: Joi.string().required(),
+  RESEND_API_KEY: Joi.string().allow('').default(''),
   RESEND_IMPORT_DOMAIN: Joi.string().default('inbound.notaryday.app'),
   RESEND_WEBHOOK_SECRET: Joi.string().allow('').default(''),
+  RESEND_FROM_ADDRESS: Joi.string().allow('').default(''),
+
+  // Brevo (alternative transactional email provider)
+  BREVO_API_KEY: Joi.string().allow('').default(''),
+  BREVO_FROM_ADDRESS: Joi.string().allow('').default(''),
+
   EMAIL_ASSET_BASE_URL: Joi.string().uri().allow('').default(''),
 
   // Native Web Push (optional; generate once with `npx web-push generate-vapid-keys`)

@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { EmailRendererService } from '../../common/email/email-renderer.service';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
 
 describe('NotificationsService web push', () => {
   const config = {
@@ -19,6 +20,11 @@ describe('NotificationsService web push', () => {
     },
     userSettings: { findUnique: jest.fn() },
   };
+  const transactionalEmail = {
+    send: jest
+      .fn()
+      .mockResolvedValue({ provider: 'resend', messageId: 'test-123' }),
+  };
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -27,6 +33,7 @@ describe('NotificationsService web push', () => {
       config as unknown as ConfigService,
       prisma as unknown as PrismaService,
       {} as EmailRendererService,
+      transactionalEmail as unknown as TransactionalEmailService,
     );
     prisma.pushSubscription.upsert.mockResolvedValue({ id: 'subscription-1' });
     prisma.pushSubscription.findUnique.mockResolvedValue(null);
@@ -53,6 +60,7 @@ describe('NotificationsService web push', () => {
       config as unknown as ConfigService,
       prisma as unknown as PrismaService,
       {} as EmailRendererService,
+      transactionalEmail as unknown as TransactionalEmailService,
     );
 
     await service.sendPushToUser('user-1', {

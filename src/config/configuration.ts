@@ -37,9 +37,14 @@ export const geminiConfig = registerAs('gemini', () => ({
 }));
 
 export const resendConfig = registerAs('resend', () => ({
-  apiKey: process.env.RESEND_API_KEY!,
+  apiKey: process.env.RESEND_API_KEY ?? '',
   importDomain: process.env.RESEND_IMPORT_DOMAIN ?? 'inbound.notaryday.app',
   webhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? '',
+}));
+
+export const brevoConfig = registerAs('brevo', () => ({
+  apiKey: process.env.BREVO_API_KEY ?? '',
+  fromAddress: process.env.BREVO_FROM_ADDRESS ?? '',
 }));
 
 export const lemonSqueezyConfig = registerAs('lemonsqueezy', () => ({
@@ -68,11 +73,8 @@ export const marketingConfig = registerAs('marketing', () => ({
   webhookSecretResend: process.env.MARKETING_WEBHOOK_SECRET_RESEND ?? '',
   webhookSecretBrevo: process.env.MARKETING_WEBHOOK_SECRET_BREVO ?? '',
   // Base URL used for tracking pixels / click redirects / unsubscribe links.
-  // Must point at the API itself (e.g. https://api.notaryday.app), not the frontend.
   publicBaseUrl:
-    process.env.MARKETING_PUBLIC_BASE_URL ||
-    process.env.APP_URL ||
-    'http://localhost:4000',
+    process.env.MARKETING_PUBLIC_BASE_URL || 'http://localhost:4000',
   unsubBaseUrl:
     process.env.MARKETING_UNSUB_BASE_URL || process.env.APP_URL || '',
   physicalAddress: process.env.MARKETING_PHYSICAL_ADDRESS ?? '',
@@ -87,6 +89,7 @@ export default [
   openRouterConfig,
   geminiConfig,
   resendConfig,
+  brevoConfig,
   lemonSqueezyConfig,
   googleConfig,
   r2Config,

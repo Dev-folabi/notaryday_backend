@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
 import { AdminService } from './admin.service';
 
 describe('AdminService', () => {
@@ -31,6 +32,10 @@ describe('AdminService', () => {
       count: jest.fn(),
       findMany: jest.fn(),
     },
+    systemSettings: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+    },
   };
 
   const queues: Record<string, any> = {
@@ -51,6 +56,15 @@ describe('AdminService', () => {
         {
           provide: AuthService,
           useValue: { forgotPassword: jest.fn() },
+        },
+        {
+          provide: TransactionalEmailService,
+          useValue: {
+            getProviderStatus: jest.fn(),
+            testProvider: jest.fn(),
+            clearCache: jest.fn(),
+            send: jest.fn(),
+          },
         },
         { provide: 'BullQueue_job-import', useValue: queues.jobImport },
         { provide: 'BullQueue_invoice', useValue: queues.invoice },
@@ -254,6 +268,70 @@ describe('AdminService', () => {
       expect(result.invoices.emailFailures).toBe(1);
       expect(result.lemonsqueezy.total).toBe(30);
       expect(result.lemonsqueezy.pending).toBe(3);
+    });
+  });
+
+  describe('getEmailProviders()', () => {
+    it('delegates to TransactionalEmailService.getProviderStatus', async () => {
+      const mockStatus = {
+        providers: [
+          {
+            type: 'resend' as const,
+            label: 'Resend',
+            configured: true,
+            fromEmail: 'noreply@notaryday.app',
+          },
+          {
+            type: 'brevo' as const,
+            label: 'Brevo',
+            configured: false,
+            fromEmail: '',
+          },
+        ],
+        active: 'resend' as const,
+      };
+      jest
+        .spyOn(service['transactionalEmail'], 'getProviderStatus')
+        .mockResolvedValue(mockStatus);
+
+      const result = await service.getEmailProviders();
+      expect(result).toEqual(mockStatus);
+    });
+  });
+
+  describe('setActiveEmailProvider()', () => {
+    it('upserts the provider and clears the cache', async () => {
+      const clearCacheSpy = jest
+        .spyOn(service['transactionalEmail'], 'clearCache')
+        .mockImplementation();
+      prisma.systemSettings.upsert.mockResolvedValue({
+        key: 'transactional_email_provider',
+        value: 'brevo',
+      });
+
+      const result = await service.setActiveEmailProvider('brevo');
+      expect(prisma.systemSettings.upsert).toHaveBeenCalledWith({
+        where: { key: 'transactional_email_provider' },
+        update: expect.objectContaining({ value: 'brevo' }),
+        create: { key: 'transactional_email_provider', value: 'brevo' },
+      });
+      expect(clearCacheSpy).toHaveBeenCalled();
+      expect(result).toEqual({ active: 'brevo' });
+    });
+  });
+
+  describe('testEmailProvider()', () => {
+    it('delegates to TransactionalEmailService.testProvider', async () => {
+      jest
+        .spyOn(service['transactionalEmail'], 'testProvider')
+        .mockResolvedValue({ provider: 'resend', messageId: 'msg-1' });
+
+      const result = await service.testEmailProvider('resend', {
+        to: 'admin@example.com',
+        subject: 'Test',
+        html: '<p>hi</p>',
+      });
+      expect(result).toEqual({ provider: 'resend', messageId: 'msg-1' });
     });
   });
 });

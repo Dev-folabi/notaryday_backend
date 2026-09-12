@@ -19,6 +19,10 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { AdminService } from './admin.service';
 import { UpdateUserPlanDto } from './dto/update-plan.dto';
+import {
+  SetActiveEmailProviderDto,
+  TestEmailDto,
+} from './dto/email-provider.dto';
 import { PlanTier } from '../../../generated/prisma';
 
 @ApiTags('Admin')
@@ -135,5 +139,36 @@ export class AdminController {
   @ApiOperation({ summary: 'Queue, import, invoice & webhook health' })
   async systemHealth() {
     return { success: true, data: await this.admin.systemHealth() };
+  }
+
+  @Get('email/providers')
+  @ApiOperation({
+    summary: 'List transactional email providers, active provider & env status',
+  })
+  async emailProviders() {
+    return { success: true, data: await this.admin.getEmailProviders() };
+  }
+
+  @Patch('email/providers')
+  @ApiOperation({ summary: 'Set the active transactional email provider' })
+  async setEmailProvider(@Body() dto: SetActiveEmailProviderDto) {
+    return {
+      success: true,
+      data: await this.admin.setActiveEmailProvider(dto.provider),
+    };
+  }
+
+  @Post('email/test')
+  @ApiOperation({ summary: 'Send a test email via a specific provider' })
+  async testEmail(@Body() dto: TestEmailDto) {
+    return {
+      success: true,
+      data: await this.admin.testEmailProvider(dto.provider, {
+        to: dto.to,
+        subject: dto.subject,
+        html: dto.html,
+        text: dto.text,
+      }),
+    };
   }
 }

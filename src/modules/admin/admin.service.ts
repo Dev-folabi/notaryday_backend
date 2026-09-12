@@ -16,6 +16,12 @@ import {
   QUEUE_BILLING_WEBHOOK,
   QUEUE_MARKETING,
 } from '../../queues/queue.constants';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
+import type {
+  TransactionalProviderType,
+  TransactionalSendOptions,
+  TransactionalSendResult,
+} from '../transactional-email/interface';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -42,6 +48,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    private readonly transactionalEmail: TransactionalEmailService,
     @InjectQueue(QUEUE_JOB_IMPORT) private readonly jobImportQueue: Queue,
     @InjectQueue(QUEUE_INVOICE) private readonly invoiceQueue: Queue,
     @InjectQueue(QUEUE_NOTIFICATION) private readonly notificationQueue: Queue,
@@ -458,5 +465,33 @@ export class AdminService {
         recent: recentLsEvents,
       },
     };
+  }
+
+  // ----- Email provider settings -----
+
+  async getEmailProviders() {
+    const status = await this.transactionalEmail.getProviderStatus();
+    return {
+      providers: status.providers,
+      active: status.active,
+    };
+  }
+
+  async setActiveEmailProvider(provider: TransactionalProviderType) {
+    await this.prisma.systemSettings.upsert({
+      where: { key: 'transactional_email_provider' },
+      update: { value: provider, updatedAt: new Date() },
+      create: { key: 'transactional_email_provider', value: provider },
+    });
+
+    this.transactionalEmail.clearCache();
+    return { active: provider };
+  }
+
+  async testEmailProvider(
+    provider: TransactionalProviderType,
+    options: TransactionalSendOptions,
+  ): Promise<TransactionalSendResult> {
+    return this.transactionalEmail.testProvider(provider, options);
   }
 }
