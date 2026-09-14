@@ -24,9 +24,10 @@ export class PrismaService
 
     const pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: process.env.NODE_ENV === 'production',
-      },
+      ssl:
+        process.env.DATABASE_SSL === 'true'
+          ? { rejectUnauthorized: true }
+          : false,
       max: 10,
       min: 2,
       idleTimeoutMillis: 30000,
@@ -53,10 +54,10 @@ export class PrismaService
         // Test raw pool connection first
         const client = await this.pool.connect();
         client.release();
-        this.logger.log('✅ pg.Pool connected to NeonDB');
+        this.logger.log('✅ pg.Pool connected to PostgreSQL');
 
         await this.$connect();
-        this.logger.log('✅ Prisma connected to NeonDB');
+        this.logger.log('✅ Prisma connected to PostgreSQL');
         break;
       } catch (error) {
         const err = error as Error;
