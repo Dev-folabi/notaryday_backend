@@ -70,11 +70,14 @@ export class CampaignRecipient {
   @Prop({ default: 0, type: Number })
   clickCount: number;
 
-  @Prop({ type: Date })
-  firstOpenedAt: Date;
+  @Prop({ type: [Date], default: [] })
+  openedAt: Date[];
+
+  @Prop({ type: [Date], default: [] })
+  clickedAt: Date[];
 
   @Prop({ type: Date })
-  firstClickedAt: Date;
+  firstOpenedAt: Date;
 
   /** Per-recipient unsubscribe token (direct sends to non-leads). */
   @Prop({ index: true, sparse: true, type: String })

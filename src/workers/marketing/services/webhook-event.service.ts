@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   CampaignRecipient,
   CampaignRecipientDocument,
@@ -26,6 +26,7 @@ import type { NormalizedWebhookEvent } from '../../../modules/marketing/webhooks
 @Injectable()
 export class WebhookEventService {
   private readonly logger = new Logger(WebhookEventService.name);
+  private readonly DEDUP_WINDOW_MS = 2000;
 
   constructor(
     @InjectModel(CampaignRecipient.name)
@@ -36,6 +37,22 @@ export class WebhookEventService {
     @InjectModel(EmailEvent.name)
     private readonly eventModel: Model<EmailEventDocument>,
   ) {}
+
+  private async hasRecentEvent(
+    recipientId: Types.ObjectId,
+    type: 'OPENED' | 'CLICKED',
+  ): Promise<boolean> {
+    const since = new Date(Date.now() - this.DEDUP_WINDOW_MS);
+    const existing = await this.eventModel
+      .findOne({
+        recipientRef: recipientId,
+        type,
+        createdAt: { $gte: since },
+      })
+      .select('_id')
+      .exec();
+    return !!existing;
+  }
 
   async process(event: NormalizedWebhookEvent): Promise<void> {
     const recipient = await this.resolveRecipient(event);
@@ -56,31 +73,14 @@ export class WebhookEventService {
 
     switch (event.type) {
       case 'OPENED': {
+        if (await this.hasRecentEvent(recipient._id, 'OPENED')) return;
         const now = new Date();
         await this.recipientModel
           .updateOne(
             { _id: recipient._id },
             {
               $inc: { openCount: 1 },
-              $set: { firstOpenedAt: recipient.firstOpenedAt ?? now },
-            },
-          )
-          .exec();
-        if (recipient.leadRef) {
-          await this.leadModel
-            .updateOne({ _id: recipient.leadRef }, { $inc: { openedCount: 1 } })
-            .exec();
-        }
-        break;
-      }
-      case 'CLICKED': {
-        const now = new Date();
-        await this.recipientModel
-          .updateOne(
-            { _id: recipient._id },
-            {
-              $inc: { clickCount: 1 },
-              $set: { firstClickedAt: recipient.firstClickedAt ?? now },
+              $push: { openedAt: now },
             },
           )
           .exec();
@@ -88,7 +88,29 @@ export class WebhookEventService {
           await this.leadModel
             .updateOne(
               { _id: recipient.leadRef },
-              { $inc: { clickedCount: 1 } },
+              { $inc: { openedCount: 1 }, $push: { openedAt: now } },
+            )
+            .exec();
+        }
+        break;
+      }
+      case 'CLICKED': {
+        if (await this.hasRecentEvent(recipient._id, 'CLICKED')) return;
+        const now = new Date();
+        await this.recipientModel
+          .updateOne(
+            { _id: recipient._id },
+            {
+              $inc: { clickCount: 1 },
+              $push: { clickedAt: now },
+            },
+          )
+          .exec();
+        if (recipient.leadRef) {
+          await this.leadModel
+            .updateOne(
+              { _id: recipient.leadRef },
+              { $inc: { clickedCount: 1 }, $push: { clickedAt: now } },
             )
             .exec();
         }

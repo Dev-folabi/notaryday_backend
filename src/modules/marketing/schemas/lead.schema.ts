@@ -120,6 +120,12 @@ export class Lead {
   @Prop({ default: 0, type: Number })
   clickedCount: number;
 
+  @Prop({ type: [Date], default: [] })
+  openedAt: Date[];
+
+  @Prop({ type: [Date], default: [] })
+  clickedAt: Date[];
+
   @Prop({ type: Date })
   lastContactedAt: Date;
 

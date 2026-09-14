@@ -27,23 +27,47 @@ export class TrackingService {
     private readonly eventModel: Model<EmailEventDocument>,
   ) {}
 
+  private readonly DEDUP_WINDOW_MS = 2000;
+
+  private async hasRecentEvent(
+    recipientId: Types.ObjectId,
+    type: 'OPENED' | 'CLICKED',
+  ): Promise<boolean> {
+    const since = new Date(Date.now() - this.DEDUP_WINDOW_MS);
+    const existing = await this.eventModel
+      .findOne({
+        recipientRef: recipientId,
+        type,
+        createdAt: { $gte: since },
+      })
+      .select('_id')
+      .exec();
+    return !!existing;
+  }
+
   /** Records an open and always resolves (never leaks recipient validity). */
   async recordOpen(recipientId: string) {
     const recipient = await this.findRecipient(recipientId);
     if (!recipient) return;
+
+    if (await this.hasRecentEvent(recipient._id, 'OPENED')) return;
+
     const now = new Date();
     await this.recipientModel
       .updateOne(
         { _id: recipient._id },
         {
           $inc: { openCount: 1 },
-          $set: { firstOpenedAt: recipient.firstOpenedAt ?? now },
+          $push: { openedAt: now },
         },
       )
       .exec();
     if (recipient.leadRef) {
       await this.leadModel
-        .updateOne({ _id: recipient.leadRef }, { $inc: { openedCount: 1 } })
+        .updateOne(
+          { _id: recipient.leadRef },
+          { $inc: { openedCount: 1 }, $push: { openedAt: now } },
+        )
         .exec();
     }
     await this.eventModel.create({
@@ -76,19 +100,24 @@ export class TrackingService {
     const recipient = await this.findRecipient(recipientId);
     if (!recipient) return url;
 
+    if (await this.hasRecentEvent(recipient._id, 'CLICKED')) return url;
+
     const now = new Date();
     await this.recipientModel
       .updateOne(
         { _id: recipient._id },
         {
           $inc: { clickCount: 1 },
-          $set: { firstClickedAt: recipient.firstClickedAt ?? now },
+          $push: { clickedAt: now },
         },
       )
       .exec();
     if (recipient.leadRef) {
       await this.leadModel
-        .updateOne({ _id: recipient.leadRef }, { $inc: { clickedCount: 1 } })
+        .updateOne(
+          { _id: recipient.leadRef },
+          { $inc: { clickedCount: 1 }, $push: { clickedAt: now } },
+        )
         .exec();
     }
     await this.eventModel.create({

@@ -5,7 +5,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 3
@@ -14,10 +14,12 @@ services:
   # completes successfully.
   migrate:
     image: ghcr.io/dev-folabi/notaryday_backend:latest
-    restart: "no"
+    restart: 'no'
     env_file:
       - .env
-    command: ["npx", "prisma", "migrate", "deploy"]
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    command: ['npx', 'prisma', 'migrate', 'deploy']
 
   notaryday-api:
     image: ghcr.io/dev-folabi/notaryday_backend:latest
@@ -27,36 +29,40 @@ services:
       target: production
     env_file:
       - .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     ports:
-      - "4000:4000"
+      - '4000:4000'
     depends_on:
       redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: ["node", "dist/src/main"]
+    command: ['node', 'dist/src/main']
 
   notaryday-worker:
-    image: ghcr.io/dev-folibi/notaryday_backend:latest
+    image: ghcr.io/dev-folabi/notaryday_backend:latest
     restart: unless-stopped
     build:
       context: .
       target: production
     env_file:
       - .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     depends_on:
       redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: ["node", "dist/src/main-worker"]
+    command: ['node', 'dist/src/main-worker']
     healthcheck:
       disable: true
 
   # Marketing/CRM worker — consumes the `marketing` queue against MongoDB.
   # Runs from the same image, no Postgres dependency.
   notaryday-marketing-worker:
-    image: ghcr.io/dev-folibi/notaryday_backend:latest
+    image: ghcr.io/dev-folabi/notaryday_backend:latest
     restart: unless-stopped
     build:
       context: .
@@ -66,7 +72,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: ["node", "dist/src/main-marketing-worker"]
+    command: ['node', 'dist/src/main-marketing-worker']
     healthcheck:
       disable: true
 

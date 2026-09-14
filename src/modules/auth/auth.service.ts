@@ -67,6 +67,23 @@ export class AuthService {
     // Seed signing type defaults
     await this.userSettingsService.seedSigningDefaults(user.id);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password_hash, ...rest } = user;
+
+    this.analytics.track('user_registered', user.id, {
+      plan: user.plan,
+      trial: user.plan_expires_at ? true : false,
+    });
+
+    // Marketing conversion event (lead → signup)
+    this.marketingEvents.conversion({
+      email: user.email,
+      userId: user.id,
+      kind: 'signup',
+    });
+
+    const token = this.jwtService.sign({ sub: user.id, email: user.email });
+
     // New accounts get a Pro trial via TRIAL_PLAN/TRIAL_DAYS
     const trialDays = user.plan_expires_at
       ? Math.max(
@@ -79,15 +96,18 @@ export class AuthService {
       : undefined;
     const displayName = user.full_name || user.username || 'Notary';
 
-    // Send welcome email (includes Pro trial info when applicable)
+    // Send onboarding email sequence (Day 0 immediately, Days 1-4 scheduled)
     try {
-      await this.notificationsService.sendWelcomeEmail(
+      await this.notificationsService.sendNewUserOnboardingSequence(
         user.email,
         displayName,
         trialDays,
       );
     } catch (error) {
-      console.warn(`Failed to send welcome email to ${user.email}:`, error);
+      console.warn(
+        `Failed to send onboarding sequence to ${user.email}:`,
+        error,
+      );
     }
 
     // Create welcome in-app notification
@@ -107,22 +127,6 @@ export class AuthService {
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password_hash, ...rest } = user;
-
-    this.analytics.track('user_registered', user.id, {
-      plan: user.plan,
-      trial: user.plan_expires_at ? true : false,
-    });
-
-    // Marketing conversion event (lead → signup)
-    this.marketingEvents.conversion({
-      email: user.email,
-      userId: user.id,
-      kind: 'signup',
-    });
-
-    const token = this.jwtService.sign({ sub: user.id, email: user.email });
     return { user: rest, token };
   }
 
