@@ -153,15 +153,21 @@ export class LeadsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Lead detail with messages + suppression state' })
+  @ApiOperation({
+    summary:
+      'Lead detail with messages, suppression state and per-step send progress',
+  })
   @ApiResponse({ status: 200, description: 'Lead detail' })
   @ApiResponse({ status: 404, description: 'Lead not found' })
   async detail(@Param('id') id: string) {
     const { lead, suppression } = await this.leads.detail(id);
-    const messages = await this.leads.listMessages(id);
+    const [messages, stepProgress] = await Promise.all([
+      this.leads.listMessages(id),
+      this.leads.stepProgress(id),
+    ]);
     return {
       success: true,
-      data: { lead, messages, suppression },
+      data: { lead, messages, suppression, stepProgress },
     };
   }
 

@@ -151,6 +151,7 @@ model User {
   push_subscriptions    PushSubscription[]
   job_imports           JobImport[]
   email_templates       EmailTemplate[]
+  email_sequences       EmailSequence[]
 
   @@map("users")
 }
@@ -721,6 +722,24 @@ model GeocodeCache {
 }
 
 // PLATFORM-WIDE SYSTEM SETTINGS
+
+model EmailSequence {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: id)
+  sequenceType   String   // "new_user" | "existing_user"
+  startedAt      DateTime @default(now()) @db.Timestamptz
+  day0SentAt     DateTime? @db.Timestamptz
+  day1SentAt     DateTime? @db.Timestamptz
+  day2SentAt     DateTime? @db.Timestamptz
+  day3SentAt     DateTime? @db.Timestamptz
+  day4SentAt     DateTime? @db.Timestamptz
+  currentDay     Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz
+  updatedAt      DateTime @updatedAt @db.Timestamptz
+
+  @@map("email_sequences")
+}
 
 model SystemSettings {
   key        String   @id

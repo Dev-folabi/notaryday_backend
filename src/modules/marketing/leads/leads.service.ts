@@ -11,6 +11,10 @@ import {
   Suppression,
   SuppressionDocument,
 } from '../schemas/suppression.schema';
+import {
+  CampaignRecipient,
+  CampaignRecipientDocument,
+} from '../schemas/campaign-recipient.schema';
 import { LEAD_STATUSES, WAVE_KEYS, DM_STEP } from '../marketing.constants';
 
 export interface LeadListFilters {
@@ -33,6 +37,20 @@ export interface LeadListResult {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
+/** Per-sequence-step send status for a single lead (steps 1-9). */
+export interface LeadStepProgressRow {
+  step: number;
+  /** Derived status; null when the step was never part of any campaign. */
+  status: string | null;
+  sentCount: number;
+  openCount: number;
+  clickCount: number;
+  lastSentAt: Date | null;
+  /** Earliest future QUEUED/SENDING sendAt for this step, if any. */
+  nextSendAt: Date | null;
+  lastError: string | null;
+}
+
 @Injectable()
 export class LeadsService {
   constructor(
@@ -41,6 +59,8 @@ export class LeadsService {
     private readonly messageModel: Model<LeadMessageDocument>,
     @InjectModel(Suppression.name)
     private readonly suppressionModel: Model<SuppressionDocument>,
+    @InjectModel(CampaignRecipient.name)
+    private readonly recipientModel: Model<CampaignRecipientDocument>,
   ) {}
 
   async list(filters: LeadListFilters): Promise<LeadListResult> {
@@ -373,6 +393,97 @@ export class LeadsService {
       .find({ leadRef: lead._id })
       .sort({ step: 1 })
       .exec();
+  }
+
+  /**
+   * Per-step send progress for a lead, aggregated across every campaign the
+   * lead was ever part of. A step's status is derived with precedence:
+   * SENT > BOUNCED > UNSUBSCRIBED/COMPLAINED > QUEUED/SENDING (scheduled) >
+   * FAILED > SKIPPED/CANCELLED > never touched.
+   */
+  async stepProgress(leadId: string): Promise<LeadStepProgressRow[]> {
+    const lead = await this.findLeadOrThrow(leadId);
+    const recipients = await this.recipientModel
+      .find({ leadRef: lead._id })
+      .select('step status sentAt sendAt openCount clickCount error skipReason')
+      .lean<
+        {
+          step: number;
+          status: string;
+          sentAt?: Date | null;
+          sendAt?: Date | null;
+          openCount?: number;
+          clickCount?: number;
+          error?: string | null;
+          skipReason?: string | null;
+        }[]
+      >()
+      .exec();
+
+    const byStep = new Map<
+      number,
+      {
+        step: number;
+        status: string;
+        sentAt?: Date | null;
+        sendAt?: Date | null;
+        openCount?: number;
+        clickCount?: number;
+        error?: string | null;
+        skipReason?: string | null;
+      }[]
+    >();
+    for (const r of recipients) {
+      const list = byStep.get(r.step) ?? [];
+      list.push(r);
+      byStep.set(r.step, list);
+    }
+
+    const rows: LeadStepProgressRow[] = [];
+    for (let step = 1; step <= 9; step++) {
+      const list = byStep.get(step) ?? [];
+      const sent = list.filter((r) => r.status === 'SENT');
+      const scheduled = list.filter((r) =>
+        ['QUEUED', 'SENDING'].includes(r.status),
+      );
+      const bounced = list.filter((r) => r.status === 'BOUNCED');
+      const optedOut = list.filter((r) =>
+        ['UNSUBSCRIBED', 'COMPLAINED'].includes(r.status),
+      );
+      const failed = list.filter((r) => r.status === 'FAILED');
+      const skipped = list.filter((r) =>
+        ['SKIPPED', 'CANCELLED'].includes(r.status),
+      );
+
+      let status: string | null = null;
+      if (sent.length > 0) status = 'SENT';
+      else if (bounced.length > 0) status = 'BOUNCED';
+      else if (optedOut.length > 0) status = 'UNSUBSCRIBED';
+      else if (scheduled.length > 0) status = 'QUEUED';
+      else if (failed.length > 0) status = 'FAILED';
+      else if (skipped.length > 0) status = 'SKIPPED';
+
+      const sentTimes = sent
+        .map((r) => (r.sentAt ? new Date(r.sentAt).getTime() : 0))
+        .filter((t) => t > 0);
+      const futureTimes = scheduled
+        .map((r) => (r.sendAt ? new Date(r.sendAt).getTime() : 0))
+        .filter((t) => t > 0);
+
+      rows.push({
+        step,
+        status,
+        sentCount: sent.length,
+        openCount: list.reduce((sum, r) => sum + (r.openCount ?? 0), 0),
+        clickCount: list.reduce((sum, r) => sum + (r.clickCount ?? 0), 0),
+        lastSentAt:
+          sentTimes.length > 0 ? new Date(Math.max(...sentTimes)) : null,
+        nextSendAt:
+          futureTimes.length > 0 ? new Date(Math.min(...futureTimes)) : null,
+        lastError: failed[0]?.error ?? skipped[0]?.skipReason ?? null,
+      });
+    }
+    return rows;
   }
 
   /**

@@ -5,3 +5,4 @@ export const QUEUE_NOTIFICATION = 'notification';
 export const QUEUE_CALENDAR_SYNC = 'calendar-sync';
 export const QUEUE_BILLING_WEBHOOK = 'billing-webhook';
 export const QUEUE_MARKETING = 'marketing';
+export const QUEUE_EMAIL_SEQUENCE = 'email-sequence';

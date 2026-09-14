@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
+import { EmailSequenceProcessor } from './email-sequence.processor';
+import { EmailSequenceCronService } from './email-sequence.cron.service';
 import { JobImportProcessor } from './job-import.processor';
 import { InvoiceProcessor } from './invoice.processor';
 import { NotificationProcessor } from './notification.processor';
@@ -20,6 +22,7 @@ import {
   QUEUE_NOTIFICATION,
   QUEUE_CALENDAR_SYNC,
   QUEUE_BILLING_WEBHOOK,
+  QUEUE_EMAIL_SEQUENCE,
 } from '../queues/queue.constants';
 
 @Module({
@@ -30,6 +33,13 @@ import {
       { name: QUEUE_NOTIFICATION },
       { name: QUEUE_CALENDAR_SYNC },
       { name: QUEUE_BILLING_WEBHOOK },
+      {
+        name: QUEUE_EMAIL_SEQUENCE,
+        limiter: {
+          max: 10,
+          duration: 60_000,
+        },
+      },
     ),
     NotificationsModule,
     UsersModule,
@@ -47,6 +57,8 @@ import {
     BillingWebhookProcessor,
     InvoiceRetryCronService,
     SoftDeletePurgeService,
+    EmailSequenceProcessor,
+    EmailSequenceCronService,
   ],
 })
 export class WorkersModule {}
