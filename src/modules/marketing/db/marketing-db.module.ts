@@ -23,6 +23,10 @@ import {
   OutreachTaskSchema,
 } from '../schemas/outreach-task.schema';
 import { Playbook, PlaybookSchema } from '../schemas/playbook.schema';
+import {
+  MarketingSettings,
+  MarketingSettingsSchema,
+} from '../schemas/marketing-settings.schema';
 
 /**
  * MongoDB connection + marketing schemas. Imported by both the API
@@ -79,6 +83,7 @@ import { Playbook, PlaybookSchema } from '../schemas/playbook.schema';
       { name: Wave.name, schema: WaveSchema },
       { name: OutreachTask.name, schema: OutreachTaskSchema },
       { name: Playbook.name, schema: PlaybookSchema },
+      { name: MarketingSettings.name, schema: MarketingSettingsSchema },
     ]),
   ],
   exports: [MongooseModule],
