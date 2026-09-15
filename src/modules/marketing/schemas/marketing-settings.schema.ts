@@ -9,9 +9,11 @@ import { HydratedDocument } from 'mongoose';
   collection: 'marketing_settings',
   timestamps: true,
   versionKey: false,
+  _id: false,
 })
 export class MarketingSettings {
   /** Always "global" — enforced by the service layer. */
+  @Prop({ type: String, required: true })
   _id: string;
 
   /** Base URL used for tracking pixel, click-wrap, and unsubscribe links. */
