@@ -30,6 +30,8 @@ import { OutreachTasksController } from './tasks/outreach-tasks.controller';
 import { PlaybooksService } from './playbooks/playbooks.service';
 import { PlaybooksController } from './playbooks/playbooks.controller';
 import { MarketingHealthController } from './marketing-health.controller';
+import { MarketingSettingsController } from './settings/marketing-settings.controller';
+import { MarketingSettingsService } from './settings/marketing-settings.service';
 
 /**
  * Admin-facing marketing/CRM module (MongoDB-backed).
@@ -56,6 +58,7 @@ import { MarketingHealthController } from './marketing-health.controller';
     OutreachTasksController,
     PlaybooksController,
     MarketingHealthController,
+    MarketingSettingsController,
   ],
   providers: [
     EncryptionService,
@@ -72,6 +75,7 @@ import { MarketingHealthController } from './marketing-health.controller';
     WavesService,
     OutreachTasksService,
     PlaybooksService,
+    MarketingSettingsService,
   ],
   exports: [LeadsService, EncryptionService, MailerFactory],
 })

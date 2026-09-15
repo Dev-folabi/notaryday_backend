@@ -11,6 +11,7 @@ import { SendEmailService } from './services/send-email.service';
 import { WebhookEventService } from './services/webhook-event.service';
 import { ConversionService } from './services/conversion.service';
 import { PlaybooksService } from '../../modules/marketing/playbooks/playbooks.service';
+import { MarketingSettingsService } from '../../modules/marketing/settings/marketing-settings.service';
 import { DispatchTickService } from './crons/dispatch-tick.service';
 import { SendTickService } from './crons/send-tick.service';
 import { MaintenanceTickService } from './crons/maintenance-tick.service';
@@ -35,6 +36,7 @@ import { DigestCronService } from './crons/digest-cron.service';
     WebhookEventService,
     ConversionService,
     PlaybooksService,
+    MarketingSettingsService,
     MarketingProcessor,
     DispatchTickService,
     SendTickService,

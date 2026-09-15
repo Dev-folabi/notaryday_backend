@@ -14,6 +14,7 @@ export interface ComposeInput {
   unsubToken: string;
   publicBaseUrl: string;
   physicalAddress?: string;
+  pixelTrackingEnabled?: boolean;
 }
 
 export interface ComposedEmail {
@@ -78,7 +79,7 @@ export function composeMarketingEmail(input: ComposeInput): ComposedEmail {
   ${addressLine ? `<p style="margin:0 0 4px">${escapeHtml(addressLine)}</p>` : ''}
   <p style="margin:0">Don't want these emails? <a href="${unsubUrl}" style="color:#6b7280">Unsubscribe</a></p>
 </div>`;
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#1f2937;max-width:600px">${htmlBody}${footerHtml}</div><img src="${pixelUrl}" width="1" height="1" alt="" style="display:none" />`;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#1f2937;max-width:600px">${htmlBody}${footerHtml}</div>${input.pixelTrackingEnabled !== false ? `<img src="${pixelUrl}" width="1" height="1" alt="" style="display:none" />` : ''}`;
 
   return {
     subject: input.subject,

@@ -40,6 +40,7 @@ import {
   composeMarketingEmail,
   renderTemplate,
 } from '../../../modules/marketing/campaigns/email-compose.util';
+import { MarketingSettingsService } from '../../../modules/marketing/settings/marketing-settings.service';
 
 function utcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -89,6 +90,7 @@ export class SendEmailService {
     private readonly encryption: EncryptionService,
     private readonly mailerFactory: MailerFactory,
     private readonly config: ConfigService,
+    private readonly settings: MarketingSettingsService,
   ) {}
 
   async send(recipientId: string, isFinalAttempt: boolean): Promise<void> {
@@ -183,17 +185,23 @@ export class SendEmailService {
       body = message.body;
     }
 
+    const [publicBaseUrl, pixelTrackingEnabled] = await Promise.all([
+      this.settings.getPublicBaseUrl(),
+      this.settings.isPixelEnabled(),
+    ]);
+    const physicalAddress = this.config.get<string>(
+      'marketing.physicalAddress',
+      { infer: true },
+    );
+
     const composed = composeMarketingEmail({
       subject,
       textBody: body,
       recipientId: String(recipient._id),
       unsubToken: recipient.unsubToken ?? lead?.unsubToken ?? '',
-      publicBaseUrl: this.config.get<string>('marketing.publicBaseUrl', {
-        infer: true,
-      })!,
-      physicalAddress: this.config.get<string>('marketing.physicalAddress', {
-        infer: true,
-      }),
+      publicBaseUrl,
+      physicalAddress,
+      pixelTrackingEnabled,
     });
 
     try {
