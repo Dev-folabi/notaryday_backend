@@ -56,20 +56,18 @@ export class WebhookEventService {
 
   async process(event: NormalizedWebhookEvent): Promise<void> {
     const recipient = await this.resolveRecipient(event);
-
-    await this.eventModel.create({
-      campaignRef: recipient?.campaignRef,
-      recipientRef: recipient?._id,
-      leadRef: recipient?.leadRef,
-      email: event.email ?? recipient?.email,
-      type: event.type,
-      provider: event.provider,
-      providerMessageId: event.messageId,
-      source: 'WEBHOOK',
-      meta: { reason: event.reason, link: event.link, hard: event.hard },
-    });
-
-    if (!recipient) return;
+    if (!recipient) {
+      // Log event even when no recipient is found (for audit trail)
+      await this.eventModel.create({
+        email: event.email,
+        type: event.type,
+        provider: event.provider,
+        providerMessageId: event.messageId,
+        source: 'WEBHOOK',
+        meta: { reason: event.reason, link: event.link, hard: event.hard },
+      });
+      return;
+    }
 
     switch (event.type) {
       case 'OPENED': {
@@ -205,6 +203,20 @@ export class WebhookEventService {
       default:
         break;
     }
+
+    // Create email_events record AFTER counter updates so dedup check
+    // doesn't immediately find this record and skip the increment.
+    await this.eventModel.create({
+      campaignRef: recipient.campaignRef,
+      recipientRef: recipient._id,
+      leadRef: recipient.leadRef,
+      email: event.email ?? recipient.email,
+      type: event.type,
+      provider: event.provider,
+      providerMessageId: event.messageId,
+      source: 'WEBHOOK',
+      meta: { reason: event.reason, link: event.link, hard: event.hard },
+    });
   }
 
   private async resolveRecipient(
