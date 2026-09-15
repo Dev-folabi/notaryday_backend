@@ -248,7 +248,7 @@ export class DispatchTickService {
 
     const docs: Record<string, unknown>[] = [];
     for (const step of steps) {
-      const dayOffset = campaign.type === 'SEQUENCE' ? step * 2 - 1 : 0;
+      const dayOffset = campaign.type === 'SEQUENCE' ? (step - 1) * 2 : 0;
       const base = startAt.getTime() + dayOffset * 86_400_000;
 
       let index = 0;

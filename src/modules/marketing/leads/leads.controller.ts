@@ -92,6 +92,7 @@ export class LeadsController {
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'hasEmail', required: false, enum: ['true', 'false'] })
   @ApiQuery({ name: 'excluded', required: false, enum: ['true', 'false'] })
+  @ApiQuery({ name: 'inSequence', required: false, enum: ['true', 'false'] })
   @ApiQuery({
     name: 'sort',
     required: false,
@@ -109,6 +110,7 @@ export class LeadsController {
     @Query('status') status?: string,
     @Query('hasEmail') hasEmail?: 'true' | 'false',
     @Query('excluded') excluded?: 'true' | 'false',
+    @Query('inSequence') inSequence?: 'true' | 'false',
     @Query('sort') sort?: string,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
@@ -123,6 +125,7 @@ export class LeadsController {
       status,
       hasEmail,
       excluded,
+      inSequence,
       sort,
       page: Number(page) || 1,
       limit: Number(limit) || 20,
