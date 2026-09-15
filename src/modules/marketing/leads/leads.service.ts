@@ -27,6 +27,7 @@ export interface LeadListFilters {
   status?: string;
   hasEmail?: 'true' | 'false';
   excluded?: 'true' | 'false';
+  inSequence?: 'true' | 'false';
   page: number;
   limit: number;
   sort?: string;
@@ -64,24 +65,24 @@ export class LeadsService {
   ) {}
 
   async list(filters: LeadListFilters): Promise<LeadListResult> {
-    const query = this.buildQuery(filters);
+    const query = await this.buildQuery(filters);
     const page = Math.max(1, filters.page);
     const limit = Math.min(200, Math.max(1, filters.limit));
     const total = await this.leadModel.countDocuments(query);
 
-    let sort: Record<string, 1 | -1> = { createdAt: -1 };
+    let sort: Record<string, 1 | -1> = { createdAt: -1, _id: -1 };
     switch (filters.sort) {
       case 'name':
-        sort = { businessName: 1 };
+        sort = { businessName: 1, _id: 1 };
         break;
       case 'score':
-        sort = { prospectScore: -1 };
+        sort = { prospectScore: -1, _id: -1 };
         break;
       case 'tier':
-        sort = { fitTier: 1, prospectScore: -1 };
+        sort = { fitTier: 1, prospectScore: -1, _id: 1 };
         break;
       case 'oldest':
-        sort = { createdAt: 1 };
+        sort = { createdAt: 1, _id: 1 };
         break;
     }
 
@@ -103,7 +104,9 @@ export class LeadsService {
     };
   }
 
-  private buildQuery(filters: LeadListFilters): Record<string, unknown> {
+  private async buildQuery(
+    filters: LeadListFilters,
+  ): Promise<Record<string, unknown>> {
     const query: Record<string, unknown> = {};
     if (filters.search) {
       const rx = new RegExp(escapeRegex(filters.search.trim()), 'i');
@@ -126,6 +129,17 @@ export class LeadsService {
     if (filters.hasEmail === 'true')
       query.email = { $exists: true, $nin: [null, ''] };
     if (filters.hasEmail === 'false') query.email = { $in: [null, ''] };
+    if (filters.inSequence) {
+      const leadIdsInSequence = await this.recipientModel.distinct(
+        'leadRef',
+        {},
+      );
+      if (filters.inSequence === 'true') {
+        query._id = { $in: leadIdsInSequence };
+      } else {
+        query._id = { $nin: leadIdsInSequence };
+      }
+    }
     return query;
   }
 
@@ -222,7 +236,7 @@ export class LeadsService {
     abGroup?: string;
     status?: string;
   }): Promise<(string | number | null)[][]> {
-    const query = this.buildQuery({
+    const query = await this.buildQuery({
       tier: filters.tier,
       wave: filters.wave,
       state: filters.state,
@@ -333,21 +347,27 @@ export class LeadsService {
 
     switch (action) {
       case 'exclude':
-        await this.leadModel.updateMany(filter, [
-          { $set: { excludeFromSend: true, status: 'EXCLUDED' } },
-        ]);
+        await this.leadModel.updateMany(
+          filter,
+          [{ $set: { excludeFromSend: true, status: 'EXCLUDED' } }],
+          { updatePipeline: true },
+        );
         break;
       case 'include':
-        await this.leadModel.updateMany(filter, [
-          {
-            $set: {
-              excludeFromSend: false,
-              status: {
-                $cond: [{ $eq: ['$status', 'EXCLUDED'] }, 'NEW', '$status'],
+        await this.leadModel.updateMany(
+          filter,
+          [
+            {
+              $set: {
+                excludeFromSend: false,
+                status: {
+                  $cond: [{ $eq: ['$status', 'EXCLUDED'] }, 'NEW', '$status'],
+                },
               },
             },
-          },
-        ]);
+          ],
+          { updatePipeline: true },
+        );
         break;
       case 'delete':
         await this.messageModel.deleteMany({ leadRef: { $in: validIds } });
